@@ -15,6 +15,7 @@
   },
   "files": [
     "dist",
+    "bin",
     "daemon",
     "skills",
     "prompts",
@@ -62,5 +63,8 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opencode-ai/plugin": "^1.14.28"
+  },
+  "bin": {
+    "opencode-chorus": "./bin/cli.mjs"
   }
 }

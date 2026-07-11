@@ -1,6 +1,6 @@
 {
   "daemonVersion": "0.13.1",
-  "forkCommit": "a0aac42",
-  "bundledAt": "2026-07-11T06:23:57.281Z",
+  "forkCommit": "6ec8fc0",
+  "bundledAt": "2026-07-11T07:14:41.967Z",
   "esbuild": "0.25.0"
 }

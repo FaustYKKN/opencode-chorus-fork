@@ -90,6 +90,16 @@ The vendored bundle lives in `daemon/` and is regenerated from a chorus-fork
 checkout with `bun run sync:daemon` (see `scripts/sync-daemon.mjs`). Re-run it
 and commit the artifacts after every daemon-side change.
 
+Zero-hand-editing install: the package ships an `init` command that merges the
+plugin entry into the global OpenCode config (and removes a superseded native
+`mcp.chorus` block). Once the package is on a registry:
+
+```bash
+npx opencode-chorus init            # or: npx @your-scope/opencode-chorus init
+```
+
+For a local tarball: `node <unpacked>/bin/cli.mjs init --spec "file:///path/to/opencode-chorus-x.y.z.tgz"`.
+
 ## Documentation
 
 | Document | Description |

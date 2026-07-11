@@ -25955,6 +25955,7 @@ var init_waker = __esm({
         this.verbose = opts.verbose ?? false;
         this.cwd = opts.cwd;
         this.hooks = opts.hooks;
+        this.agentType = opts.agentType ?? "claude-code";
         this.logger = opts.logger ?? NOOP_LOGGER9;
         this.writeMcpConfigFn = opts.writeMcpConfigFn ?? writeMcpConfig;
         this.isNewSessionFn = opts.isNewSessionFn ?? isNewSession;
@@ -26172,8 +26173,9 @@ var init_waker = __esm({
           const sessionId = directIdeaUuid ?? notification.entityUuid ?? null;
           const cwd = this.resolveCwd();
           const isNew = sessionId ? this.isNewSessionFn(sessionId, cwd) : true;
+          const takeoverHint = sessionId && this.agentType === "claude-code" ? ` \u2014 take over with: claude --resume ${sessionId}` : "";
           this.logger.info(
-            `[Chorus] ${isNew ? "spawning new" : "resuming"} session ${sessionId ?? "(none)"}` + (sessionId ? ` \u2014 take over with: claude --resume ${sessionId}` : "")
+            `[Chorus] ${isNew ? "spawning new" : "resuming"} session ${sessionId ?? "(none)"}${takeoverHint}`
           );
           if (this.verbose) {
             this.logger.info(`[Chorus]   cwd=${cwd} action=${notification.action} root=${rootIdeaUuid ?? "(none)"}`);
@@ -27991,6 +27993,7 @@ function buildDaemon(creds, deps = {}) {
       reportInterrupt,
       advanceTurn,
       verbose,
+      agentType,
       // Graceful-shutdown kill escalation (fix-daemon-exit-orphan-running-turn):
       // interruptAll() reuses the SAME window the interrupt control handler uses.
       sigintTimeoutMs

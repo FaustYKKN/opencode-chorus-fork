@@ -42,7 +42,8 @@ describe("package manifest", () => {
         },
         "./server": "./dist/index.js"
       },
-      files: ["dist", "daemon", "skills", "prompts", "README.md", "LICENSE"],
+      bin: { "opencode-chorus": "./bin/cli.mjs" },
+      files: ["dist", "bin", "daemon", "skills", "prompts", "README.md", "LICENSE"],
       scripts: {
         clean: "node ./scripts/clean-dist.mjs",
         build: "tsc -p tsconfig.build.json",
