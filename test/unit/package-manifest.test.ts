@@ -42,13 +42,14 @@ describe("package manifest", () => {
         },
         "./server": "./dist/index.js"
       },
-      files: ["dist", "skills", "prompts", "README.md", "LICENSE"],
+      files: ["dist", "daemon", "skills", "prompts", "README.md", "LICENSE"],
       scripts: {
         clean: "node ./scripts/clean-dist.mjs",
         build: "tsc -p tsconfig.build.json",
         typecheck: "tsc --noEmit",
         test: "bun test",
         "pack:check": "npm pack --dry-run",
+        "sync:daemon": "node ./scripts/sync-daemon.mjs",
         prepack: "bun run clean && bun run build",
         prepublishOnly: "bun run typecheck && bun run test && bun run pack:check"
       },

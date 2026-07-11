@@ -15,6 +15,7 @@
   },
   "files": [
     "dist",
+    "daemon",
     "skills",
     "prompts",
     "README.md",
@@ -27,7 +28,8 @@
     "test": "bun test",
     "pack:check": "npm pack --dry-run",
     "prepack": "bun run clean && bun run build",
-    "prepublishOnly": "bun run typecheck && bun run test && bun run pack:check"
+    "prepublishOnly": "bun run typecheck && bun run test && bun run pack:check",
+    "sync:daemon": "node ./scripts/sync-daemon.mjs"
   },
   "author": "etnperlong",
   "keywords": [

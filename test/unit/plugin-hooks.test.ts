@@ -1152,6 +1152,7 @@ describe("plugin hooks", () => {
       expect(plugin["experimental.chat.system.transform"]).toBeFunction()
       expect(plugin["chat.params"]).toBeFunction()
       expect(Object.keys(plugin.tool ?? {}).sort()).toEqual([
+        "chorus_daemon",
         "chorus_tool_execute",
         "chorus_tool_get",
         "chorus_tools",

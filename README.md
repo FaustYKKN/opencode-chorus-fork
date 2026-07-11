@@ -75,6 +75,21 @@ The plugin does not connect to Chorus during OpenCode startup. It registers the 
 
 For all configuration options (environment variables, `chorus.json` fields, state storage, observability settings), see [docs/CONFIGURATION.md](./docs/CONFIGURATION.md).
 
+## Unattended Daemon (fork addition)
+
+This fork embeds the Chorus daemon (our chorus-fork build with the OpenCode wake
+backend) inside the plugin package and manages it through one tool. In an
+OpenCode session, ask the agent to run `chorus_daemon` with `action: "setup"` —
+it installs the daemon runtime to `~/.chorus/runtime/`, logs it in with the
+plugin's Chorus credentials, enables start-at-login, and starts it immediately.
+From then on the platform wakes OpenCode on this machine even with every window
+closed. Other actions: `start` / `stop` / `restart` / `status` / `logs` /
+`autostart_on` / `autostart_off`. Requires Node 20+ on PATH.
+
+The vendored bundle lives in `daemon/` and is regenerated from a chorus-fork
+checkout with `bun run sync:daemon` (see `scripts/sync-daemon.mjs`). Re-run it
+and commit the artifacts after every daemon-side change.
+
 ## Documentation
 
 | Document | Description |

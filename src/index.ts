@@ -12,7 +12,9 @@ import { PlanningLifecycle } from "./lifecycle/planning-lifecycle"
 import { SessionLifecycle } from "./lifecycle/session-lifecycle"
 import { NotificationCoordinator } from "./notifications/notification-coordinator"
 import { ReviewerToastCoordinator } from "./reviewers/reviewer-toast"
+import { DaemonManager } from "./daemon/daemon-manager"
 import { StateStore } from "./state/state-store"
+import { createDaemonTool } from "./tools/daemon-tool"
 import { createChorusLazyBridge } from "./tools/lazy-bridge-tools"
 import { createLogger } from "./util/logger"
 
@@ -58,6 +60,13 @@ export const createPlugin: Plugin = async (ctx, options) => {
     },
   })
   const sessionLifecycle = new SessionLifecycle(stateStore, chorusClient, config.chorusUrl)
+  // Local daemon management (embedded-daemon): the unattended wake service ships
+  // inside this package and is installed/driven via the chorus_daemon tool. It
+  // reuses the SAME agent credentials this plugin resolved.
+  const daemonTool = createDaemonTool({
+    manager: new DaemonManager({ chorusUrl: config.chorusUrl, apiKey: config.apiKey }),
+    logger,
+  })
   const tui = ctx.client.tui
     ? {
         showToast: async (input: { title?: string; message?: string; variant?: "info" | "success" | "warning" | "error"; duration?: number }) => {
@@ -192,7 +201,7 @@ export const createPlugin: Plugin = async (ctx, options) => {
         })
       })
     },
-    tool: lazyBridge.tools,
+    tool: { ...lazyBridge.tools, chorus_daemon: daemonTool },
   }
 }
 

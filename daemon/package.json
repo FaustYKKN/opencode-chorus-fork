@@ -1,0 +1,6 @@
+{
+  "name": "@chorus-aidlc/chorus",
+  "version": "0.13.1",
+  "type": "module",
+  "private": true
+}
