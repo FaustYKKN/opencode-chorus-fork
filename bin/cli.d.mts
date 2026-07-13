@@ -36,9 +36,16 @@ export type RunInitIo = {
 export function runInit(
   options?: RunInitOptions,
   io?: RunInitIo,
-): { target: string; spec: string; replaced: boolean; removedMcp: boolean }
+): { target: string; spec: string; replaced: boolean; removedMcp: boolean; skillsPathAdded: boolean }
 
 export function ownTarballName(pkg?: { name: string; version: string }): string
+
+export function stableSkillsDir(home?: string): string
+
+export function mergeSkillsPath(
+  config: Record<string, unknown>,
+  dir: string,
+): { config: Record<string, unknown>; added: boolean; removedStale: boolean }
 
 export type RunSetupOptions = RunInitOptions & {
   url?: string
@@ -75,6 +82,7 @@ export type RunSetupIo = RunInitIo & {
   download?: (url: string) => Promise<Buffer>
   extract?: (archive: Buffer) => void
   ensureRipgrep?: (chorusUrl: string, io?: unknown) => Promise<RipgrepResult>
+  cpSync?: (from: string, to: string) => void
 }
 
 export function runSetup(
@@ -85,6 +93,7 @@ export function runSetup(
   spec: string
   replaced: boolean
   removedMcp: boolean
+  skillsPathAdded: boolean
   ok: boolean
   steps: Array<{ step: string; ok: boolean; detail: string }>
   ripgrep: RipgrepResult

@@ -22,7 +22,7 @@
 // anything else is installed. Pure helpers are exported for tests.
 
 import { spawnSync } from "node:child_process"
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -75,6 +75,30 @@ export function stripNativeChorusMcp(config) {
 
 function ownPackage() {
   return JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"))
+}
+
+/** Stable location the skills are copied to — survives plugin cache eviction. */
+export function stableSkillsDir(home = os.homedir()) {
+  return path.join(home, ".chorus", "skills")
+}
+
+/**
+ * Ensure `config.skills.paths` contains the STABLE skills dir. The plugin's
+ * runtime config hook injects the cache-dir path, but the desktop (Electron
+ * sidecar) drops hook mutations — a file-level entry works in both. Stale
+ * entries pointing at our evictable plugin-cache install are removed.
+ */
+export function mergeSkillsPath(config, dir) {
+  const skills =
+    config.skills && typeof config.skills === "object" && !Array.isArray(config.skills) ? { ...config.skills } : {}
+  const paths = Array.isArray(skills.paths) ? [...skills.paths] : []
+  const kept = paths.filter((entry) => typeof entry !== "string" || !/opencode-chorus/i.test(entry))
+  const removedStale = kept.length !== paths.length
+  const normalize = (p) => String(p).replace(/[\\/]+$/, "")
+  const added = !kept.some((entry) => normalize(entry) === normalize(dir))
+  if (added) kept.push(dir)
+  skills.paths = kept
+  return { config: { ...config, skills }, added, removedStale }
 }
 
 function ownSpec() {
@@ -139,15 +163,26 @@ export function runInit(options = {}, io = {}) {
     removedMcp = stripped.removed
   }
 
+  // Only reference the stable skills dir once it actually exists (setup copies
+  // it first); a plain init leaves skill loading to the plugin's runtime hook.
+  let skillsPathAdded = false
+  const skillsDir = stableSkillsDir(io.home ?? os.homedir())
+  if (exists(skillsDir)) {
+    const mergedSkills = mergeSkillsPath(next, skillsDir)
+    next = mergedSkills.config
+    skillsPathAdded = mergedSkills.added || mergedSkills.removedStale
+  }
+
   ensureDir(path.dirname(target))
   write(target, JSON.stringify(next, null, 2) + "\n")
 
   log(`plugin entry ${merged.replaced ? "replaced" : "added"}: ${spec}`)
   if (removedMcp) log("removed the native mcp.chorus block (the plugin provides the same bridge)")
+  if (skillsPathAdded) log(`skills path pinned to ${skillsDir} (file-level, desktop-safe)`)
   log(`written: ${target}`)
   if (options.nextHint !== false)
     log('next: run "opencode-chorus setup" (or ask the OpenCode agent to enable unattended mode) to bring the daemon up')
-  return { target, spec, replaced: merged.replaced, removedMcp }
+  return { target, spec, replaced: merged.replaced, removedMcp, skillsPathAdded }
 }
 
 async function loadDaemonManager() {
@@ -249,6 +284,19 @@ export async function runSetup(options = {}, io = {}) {
     throw new Error(
       "CHORUS_URL / CHORUS_API_KEY are not set — finish step 1 (environment variables) and open a NEW terminal, or pass --url and --api-key",
     )
+  }
+
+  // Copy the bundled skills to the stable dir BEFORE init, so init can pin
+  // skills.paths at the file level (the desktop sidecar drops the plugin
+  // hook's runtime mutation — a config-file entry works in CLI and desktop).
+  const copySkills =
+    io.cpSync ?? ((from, to) => cpSync(from, to, { recursive: true }))
+  const skillsSource = fileURLToPath(new URL("../skills", import.meta.url))
+  const skillsTarget = stableSkillsDir(io.home ?? os.homedir())
+  const skillsSourceExists = (io.existsSync ?? existsSync)(skillsSource)
+  if (skillsSourceExists) {
+    copySkills(skillsSource, skillsTarget)
+    log(`✓ install skills: copied to ${skillsTarget}`)
   }
 
   // Default the plugin spec to the tarball this platform serves: correct by

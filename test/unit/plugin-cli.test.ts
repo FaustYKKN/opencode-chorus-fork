@@ -3,10 +3,12 @@ import {
   ensureRipgrep,
   isThisPlugin,
   mergePluginEntry,
+  mergeSkillsPath,
   ownTarballName,
   resolveConfigPath,
   runInit,
   runSetup,
+  stableSkillsDir,
   stripNativeChorusMcp,
 } from "../../bin/cli.mjs"
 
@@ -120,6 +122,37 @@ describe("cli runInit", () => {
   })
 })
 
+describe("cli mergeSkillsPath", () => {
+  it("adds the stable dir, idempotently", () => {
+    const first = mergeSkillsPath({}, "/home/dev/.chorus/skills")
+    expect(first.config.skills).toEqual({ paths: ["/home/dev/.chorus/skills"] })
+    expect(first.added).toBe(true)
+
+    const again = mergeSkillsPath(first.config, "/home/dev/.chorus/skills/")
+    expect((again.config.skills as { paths: string[] }).paths).toHaveLength(1)
+    expect(again.added).toBe(false)
+  })
+
+  it("removes stale entries pointing into the plugin cache, keeps foreign ones", () => {
+    const result = mergeSkillsPath(
+      {
+        skills: {
+          paths: [
+            "C:\\Users\\lingy\\.cache\\opencode\\packages\\http_\\42.192.227.134_8637\\opencode-chorus-0.10.0.tgz\\node_modules\\opencode-chorus\\skills",
+            "/home/dev/my-own-skills",
+          ],
+        },
+      },
+      "C:\\Users\\lingy\\.chorus\\skills",
+    )
+    expect(result.removedStale).toBe(true)
+    expect((result.config.skills as { paths: string[] }).paths).toEqual([
+      "/home/dev/my-own-skills",
+      "C:\\Users\\lingy\\.chorus\\skills",
+    ])
+  })
+})
+
 describe("cli runSetup", () => {
   function fakeManager(over: Record<string, unknown> = {}) {
     const calls: string[] = []
@@ -163,6 +196,7 @@ describe("cli runSetup", () => {
         log: () => {},
         manager,
         ensureRipgrep: async () => ({ ok: true, installed: false, detail: "stubbed" }),
+        cpSync: undefined as ((from: string, to: string) => void) | undefined,
       },
     }
   }
@@ -183,6 +217,27 @@ describe("cli runSetup", () => {
     expect(saved.plugin).toEqual([`http://10.0.4.14:8637/${ownTarballName()}`])
     expect(calls).toEqual(["ensureRuntime", "login", "autostart", "ctl:start", "ctl:status"])
     expect(result.steps.map((s) => s.ok)).toEqual([true, true, true, true, true])
+  })
+
+  it("copies skills to the stable dir and pins skills.paths at the file level", async () => {
+    const { manager } = fakeManager()
+    const copies: Array<[string, string]> = []
+    const { files, io } = setupIo(manager, { CHORUS_URL: "http://h", CHORUS_API_KEY: "cho_k" })
+    io.existsSync = (p: string) => p in files || p.endsWith("skills") || p.endsWith(`skills${sep(p)}`)
+    io.cpSync = (from: string, to: string) => {
+      copies.push([from, to])
+    }
+    function sep(p: string) {
+      return p.includes("\\") ? "\\" : "/"
+    }
+
+    const result = await runSetup({}, io)
+
+    expect(copies).toHaveLength(1)
+    expect(copies[0]![1]).toBe(stableSkillsDir("/home/dev"))
+    const saved = JSON.parse(files["/home/dev/.config/opencode/opencode.json"]!)
+    expect(saved.skills.paths).toEqual([stableSkillsDir("/home/dev")])
+    expect(result.skillsPathAdded).toBe(true)
   })
 
   it("treats an 'already running under systemd' start refusal as success", async () => {
