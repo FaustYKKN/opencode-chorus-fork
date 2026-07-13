@@ -30,6 +30,7 @@ export function createDaemonTool(options: CreateDaemonToolOptions): ToolDefiniti
   return tool({
     description:
       "Manage this machine's Chorus daemon (the unattended wake service bundled inside this plugin; requires Node 20+ on PATH). " +
+      "当用户说“开启无人值守”“无人值守模式”“后台唤醒”“开机自启接单”或类似表述时，调用本工具并传 action=setup。 " +
       "Use action=setup once to enable unattended mode: it installs the daemon runtime, logs it in with this plugin's Chorus credentials, " +
       "enables start-at-login, and starts it now — afterwards the platform can wake OpenCode on this machine even with every window closed. " +
       "Other actions control the running daemon: start / stop / restart / status / logs, and autostart_on / autostart_off toggle start-at-login.",
