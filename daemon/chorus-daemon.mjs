@@ -27628,7 +27628,7 @@ var init_daemon_lifecycle = __esm({
 
 // ../chorus-upstream/cli/daemon-service.mjs
 import { spawnSync as spawnSync2 } from "node:child_process";
-import { existsSync as existsSync3, mkdirSync as mkdirSync5, readFileSync as readFileSync8, unlinkSync as unlinkSync2, writeFileSync as writeFileSync6 } from "node:fs";
+import { existsSync as existsSync3, mkdirSync as mkdirSync5, readFileSync as readFileSync8, realpathSync, unlinkSync as unlinkSync2, writeFileSync as writeFileSync6 } from "node:fs";
 import { homedir as homedir7 } from "node:os";
 import { dirname as dirname5, join as join7 } from "node:path";
 import { fileURLToPath as fileURLToPath2 } from "node:url";
@@ -27652,6 +27652,16 @@ function launchdPlistPath(io = defaultIO2()) {
 }
 function resolveScriptPath() {
   return join7(dirname5(dirname5(fileURLToPath2(import.meta.url))), "chorus.mjs");
+}
+function resolveEntryScriptPath(argv = process.argv, io = { realpathSync }) {
+  const entry = argv?.[1];
+  if (entry) {
+    try {
+      return io.realpathSync(entry);
+    } catch {
+    }
+  }
+  return resolveScriptPath();
 }
 function buildServiceArgs(spec) {
   const args2 = [spec.scriptPath, "daemon"];
@@ -27867,10 +27877,10 @@ function uninstallService(io = defaultIO2()) {
     steps: ["Automatic service uninstall is only supported on Linux (systemd). Remove the daemon from your supervisor manually."]
   };
 }
-function resolveServicePaths(env = process.env, execPath = process.execPath) {
+function resolveServicePaths(env = process.env, execPath = process.execPath, argv = process.argv) {
   return {
     nodePath: execPath,
-    scriptPath: resolveScriptPath(),
+    scriptPath: resolveEntryScriptPath(argv),
     path: env.PATH ?? "/usr/local/bin:/usr/bin:/bin"
   };
 }
@@ -28168,7 +28178,7 @@ async function runDaemon(flags = {}, deps = {}) {
   }
   const isDetachedChild = env[DETACHED_ENV] === "1";
   if (flags.detach && !isDetachedChild) {
-    return startDetached({ log, errLog, lifecycle, pfDeps, argv });
+    return startDetached({ log, errLog, lifecycle, service, pfDeps, argv });
   }
   const sigintTimeoutMs = resolveSigintTimeoutMs({ sigintTimeout: flags.sigintTimeout }, { env });
   const cwds = resolveDaemonCwds({ cwd: flags.cwd }, { env });
@@ -28479,7 +28489,7 @@ async function handleLifecycleAction(action, { log, errLog, lifecycle, service, 
     }
     const r = lifecycle.stopDaemon();
     log(`[Chorus] ${r.message}`);
-    return startDetached({ log, errLog, lifecycle, pfDeps, skipPreflight: true, argv });
+    return startDetached({ log, errLog, lifecycle, service: svc, pfDeps, skipPreflight: true, argv });
   }
   errLog(`[Chorus] unknown daemon action: ${action}`);
   return 1;
@@ -28488,6 +28498,13 @@ async function startDetached(ctx) {
   const { log, errLog, lifecycle, pfDeps, skipPreflight } = ctx;
   const env = pfDeps.env ?? process.env;
   const argv = ctx.argv ?? process.argv;
+  const supervisor = ctx.service?.detectSupervisor?.() ?? { kind: "none" };
+  if (supervisor.kind === "systemd" && supervisor.active) {
+    errLog(
+      `[Chorus] a daemon is already running under systemd (${SERVICE_NAME}.service). Use 'chorus daemon status | restart' to manage it.`
+    );
+    return 1;
+  }
   const status = lifecycle.isRunning();
   if (status.running) {
     errLog(`[Chorus] a daemon is already running (pid ${status.pid}). Use 'chorus daemon stop' first.`);
