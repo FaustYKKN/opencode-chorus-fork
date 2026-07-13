@@ -1,13 +1,22 @@
 #!/usr/bin/env node
 // bin/cli.mjs — opencode-chorus command line.
 //
-//   opencode-chorus init [--spec <plugin-spec>] [--keep-mcp] [--config <path>]
+//   opencode-chorus init  [--spec <plugin-spec>] [--keep-mcp] [--config <path>]
+//   opencode-chorus setup [--url <chorus-url>] [--api-key <key>] [--workdir <dir>]
+//                         [--spec <plugin-spec>] [--keep-mcp] [--config <path>]
 //
 // `init` merges this plugin into the user's global OpenCode config so
 // onboarding never requires hand-editing JSON: it adds (or replaces) the
 // plugin entry and, by default, removes a native `mcp.chorus` block pointing
 // at a Chorus `/api/mcp` endpoint — the plugin provides the same bridge, and
 // running both channels registers confusing duplicate tools.
+//
+// `setup` is the full unattended onboarding in one deterministic command:
+// init + install the embedded daemon runtime + login + start-at-login +
+// start. It drives the same DaemonManager the chorus_daemon tool uses, but
+// under plain node — no OpenCode session and no model involved, so it works
+// even when the user's client cannot load plugins or the model fails to map
+// "开启无人值守" to a tool call.
 //
 // Zero dependencies (node builtins only) so `npx <package> init` works before
 // anything else is installed. Pure helpers are exported for tests.
@@ -63,9 +72,18 @@ export function stripNativeChorusMcp(config) {
   return { config: next, removed: true }
 }
 
+function ownPackage() {
+  return JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"))
+}
+
 function ownSpec() {
-  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"))
+  const pkg = ownPackage()
   return `${pkg.name}@${pkg.version}`
+}
+
+/** npm pack's tarball filename for this package (scope flattened: @s/n → s-n). */
+export function ownTarballName(pkg = ownPackage()) {
+  return `${pkg.name.replace(/^@/, "").replace(/\//g, "-")}-${pkg.version}.tgz`
 }
 
 function parseArgs(argv) {
@@ -77,6 +95,12 @@ function parseArgs(argv) {
     else if (arg === "--config") out.configPath = argv[++i]
     else if (arg.startsWith("--config=")) out.configPath = arg.slice("--config=".length)
     else if (arg === "--keep-mcp") out.keepMcp = true
+    else if (arg === "--url") out.url = argv[++i]
+    else if (arg.startsWith("--url=")) out.url = arg.slice("--url=".length)
+    else if (arg === "--api-key") out.apiKey = argv[++i]
+    else if (arg.startsWith("--api-key=")) out.apiKey = arg.slice("--api-key=".length)
+    else if (arg === "--workdir") out.workdir = argv[++i]
+    else if (arg.startsWith("--workdir=")) out.workdir = arg.slice("--workdir=".length)
   }
   return out
 }
@@ -120,13 +144,94 @@ export function runInit(options = {}, io = {}) {
   log(`plugin entry ${merged.replaced ? "replaced" : "added"}: ${spec}`)
   if (removedMcp) log("removed the native mcp.chorus block (the plugin provides the same bridge)")
   log(`written: ${target}`)
-  log('next: open OpenCode and ask the agent to run chorus_daemon with action "setup" to enable unattended mode')
+  if (options.nextHint !== false)
+    log('next: run "opencode-chorus setup" (or ask the OpenCode agent to enable unattended mode) to bring the daemon up')
   return { target, spec, replaced: merged.replaced, removedMcp }
 }
 
+async function loadDaemonManager() {
+  const mod = await import(new URL("../dist/daemon/daemon-manager.js", import.meta.url).href)
+  return mod.DaemonManager
+}
+
+/**
+ * Full unattended onboarding in one command: write the plugin config (init),
+ * then drive the embedded daemon manager — install runtime, login with
+ * unattended defaults, enable start-at-login, start, report status. Pure node;
+ * needs no OpenCode session. Idempotent: re-running refreshes every step.
+ */
+export async function runSetup(options = {}, io = {}) {
+  const log = io.log ?? console.log
+  const env = io.env ?? process.env
+
+  const chorusUrl = (options.url ?? env.CHORUS_BASE_URL ?? env.CHORUS_URL ?? "").trim().replace(/\/+$/, "")
+  const apiKey = (options.apiKey ?? env.CHORUS_API_KEY ?? "").trim()
+  if (!chorusUrl || !apiKey) {
+    throw new Error(
+      "CHORUS_URL / CHORUS_API_KEY are not set — finish step 1 (environment variables) and open a NEW terminal, or pass --url and --api-key",
+    )
+  }
+
+  // Default the plugin spec to the tarball this platform serves: correct by
+  // construction on any machine whose step-1 CHORUS_URL points at the platform.
+  const spec = options.spec ?? `${chorusUrl}/${ownTarballName()}`
+  const initResult = runInit({ ...options, spec, nextHint: false }, io)
+
+  const ManagerCtor = io.manager ? null : await (io.loadManager ?? loadDaemonManager)()
+  const manager = io.manager ?? new ManagerCtor({ chorusUrl, apiKey })
+
+  const steps = []
+  const record = (step, ok, detail) => {
+    steps.push({ step, ok, detail })
+    log(`${ok ? "✓" : "✗"} ${step}: ${detail}`)
+  }
+
+  const runtime = await manager.ensureRuntime()
+  record(
+    "install runtime",
+    true,
+    runtime.updated
+      ? `installed daemon ${runtime.to}${runtime.from ? ` (was ${runtime.from})` : ""} at ${runtime.runtimeEntry}`
+      : `daemon ${runtime.to} already installed at ${runtime.runtimeEntry}`,
+  )
+
+  const login = await manager.login(options.workdir)
+  const loginOk = login.code === 0
+  record(
+    "login + unattended defaults",
+    loginOk,
+    loginOk
+      ? `credentials saved; serving directory: ${login.workdir} (wakeConcurrency=1)`
+      : `login failed: ${`${login.stdout}${login.stderr}`.trim()}`,
+  )
+  if (!loginOk) return { ...initResult, ok: false, steps }
+
+  const autostart = await manager.autostart(true)
+  record("enable start-at-login", autostart.ok, autostart.detail)
+
+  const start = await manager.ctl("start")
+  const startOutput = `${start.stdout}${start.stderr}`.trim()
+  // "already running" (pidfile or systemd) is a success — the daemon is up.
+  const startOk = start.code === 0 || /already running/i.test(startOutput)
+  record("start daemon", startOk, startOutput)
+
+  const status = await manager.ctl("status")
+  record("status", status.code === 0, `${status.stdout}${status.stderr}`.trim())
+
+  const ok = steps.every((step) => step.ok)
+  log(
+    ok
+      ? "unattended mode is ACTIVE — this machine now executes platform tasks even with OpenCode closed (local console: http://127.0.0.1:8638)"
+      : "setup finished with FAILURES — see the failing step above, fix it, and re-run this same command",
+  )
+  return { ...initResult, ok, steps }
+}
+
 function usage(log = console.log) {
-  log("usage: opencode-chorus init [--spec <plugin-spec>] [--keep-mcp] [--config <path>]")
-  log("  merges this plugin into the global OpenCode config (~/.config/opencode/opencode.json)")
+  log("usage: opencode-chorus init  [--spec <plugin-spec>] [--keep-mcp] [--config <path>]")
+  log("       opencode-chorus setup [--url <chorus-url>] [--api-key <key>] [--workdir <dir>]")
+  log("  init  — merge this plugin into the global OpenCode config (~/.config/opencode/opencode.json)")
+  log("  setup — init + install/login/autostart/start the unattended daemon (reads CHORUS_URL / CHORUS_API_KEY)")
 }
 
 const invokedDirectly = (() => {
@@ -148,6 +253,14 @@ if (invokedDirectly) {
       console.error(String(error instanceof Error ? error.message : error))
       process.exit(1)
     }
+  } else if (args.command === "setup") {
+    runSetup(args).then(
+      (result) => process.exit(result.ok ? 0 : 1),
+      (error) => {
+        console.error(String(error instanceof Error ? error.message : error))
+        process.exit(1)
+      },
+    )
   } else {
     usage()
     process.exit(args.command ? 1 : 0)

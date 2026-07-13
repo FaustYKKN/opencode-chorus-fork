@@ -1,5 +1,13 @@
 import { describe, expect, it } from "bun:test"
-import { isThisPlugin, mergePluginEntry, resolveConfigPath, runInit, stripNativeChorusMcp } from "../../bin/cli.mjs"
+import {
+  isThisPlugin,
+  mergePluginEntry,
+  ownTarballName,
+  resolveConfigPath,
+  runInit,
+  runSetup,
+  stripNativeChorusMcp,
+} from "../../bin/cli.mjs"
 
 describe("cli init helpers", () => {
   it("recognizes this plugin in every spec shape", () => {
@@ -108,5 +116,103 @@ describe("cli runInit", () => {
 
     const corrupt = fakeFs("{oops")
     expect(() => runInit({ spec: "x" }, corrupt.io)).toThrow(/not valid JSON/)
+  })
+})
+
+describe("cli runSetup", () => {
+  function fakeManager(over: Record<string, unknown> = {}) {
+    const calls: string[] = []
+    return {
+      calls,
+      manager: {
+        ensureRuntime: async () => {
+          calls.push("ensureRuntime")
+          return { updated: true, from: null, to: "0.13.1", runtimeEntry: "/home/dev/.chorus/runtime/chorus-daemon.mjs" }
+        },
+        login: async () => {
+          calls.push("login")
+          return { code: 0, stdout: "", stderr: "", workdir: "/home/dev/opencode-auto-work" }
+        },
+        autostart: async () => {
+          calls.push("autostart")
+          return { ok: true, detail: "systemd unit enabled" }
+        },
+        ctl: async (action: string) => {
+          calls.push(`ctl:${action}`)
+          return { code: 0, stdout: `${action} ok`, stderr: "" }
+        },
+        ...over,
+      },
+    }
+  }
+
+  function setupIo(manager: import("../../bin/cli.mjs").SetupManager, env: Record<string, string>) {
+    const files: Record<string, string> = {}
+    return {
+      files,
+      io: {
+        env,
+        home: "/home/dev",
+        existsSync: (p: string) => p in files,
+        readFileSync: (p: string) => files[p]!,
+        writeFileSync: (p: string, content: string) => {
+          files[p] = content
+        },
+        mkdirSync: () => {},
+        log: () => {},
+        manager,
+      },
+    }
+  }
+
+  it("throws without credentials, listing what step 1 should have provided", async () => {
+    const { io } = setupIo(fakeManager().manager, {})
+    await expect(runSetup({}, io)).rejects.toThrow(/CHORUS_URL \/ CHORUS_API_KEY/)
+  })
+
+  it("runs init with a platform-derived spec, then the full daemon chain in order", async () => {
+    const { calls, manager } = fakeManager()
+    const { files, io } = setupIo(manager, { CHORUS_URL: "http://10.0.4.14:8637/", CHORUS_API_KEY: "cho_k" })
+
+    const result = await runSetup({}, io)
+
+    expect(result.ok).toBe(true)
+    const saved = JSON.parse(files["/home/dev/.config/opencode/opencode.json"]!)
+    expect(saved.plugin).toEqual([`http://10.0.4.14:8637/${ownTarballName()}`])
+    expect(calls).toEqual(["ensureRuntime", "login", "autostart", "ctl:start", "ctl:status"])
+    expect(result.steps.map((s) => s.ok)).toEqual([true, true, true, true, true])
+  })
+
+  it("treats an 'already running under systemd' start refusal as success", async () => {
+    const { manager } = fakeManager({
+      ctl: async (action: string) =>
+        action === "start"
+          ? { code: 1, stdout: "", stderr: "a daemon is already running under systemd (chorus-daemon.service)." }
+          : { code: 0, stdout: "active", stderr: "" },
+    })
+    const { io } = setupIo(manager, { CHORUS_URL: "http://h", CHORUS_API_KEY: "cho_k" })
+
+    const result = await runSetup({}, io)
+    expect(result.ok).toBe(true)
+  })
+
+  it("stops after a failed login and reports ok=false", async () => {
+    const { calls, manager } = fakeManager()
+    manager.login = async () => {
+      calls.push("login")
+      return { code: 1, stdout: "", stderr: "API key not found", workdir: "" }
+    }
+    const { io } = setupIo(manager, { CHORUS_URL: "http://h", CHORUS_API_KEY: "cho_bad" })
+
+    const result = await runSetup({}, io)
+    expect(result.ok).toBe(false)
+    expect(calls).toEqual(["ensureRuntime", "login"])
+  })
+
+  it("flattens a scoped package name into npm pack's tarball filename", () => {
+    expect(ownTarballName({ name: "opencode-chorus", version: "0.10.0" })).toBe("opencode-chorus-0.10.0.tgz")
+    expect(ownTarballName({ name: "@tixiao/opencode-chorus", version: "0.11.0" })).toBe(
+      "tixiao-opencode-chorus-0.11.0.tgz",
+    )
   })
 })

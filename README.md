@@ -100,6 +100,21 @@ npx opencode-chorus init            # or: npx @your-scope/opencode-chorus init
 
 For a local tarball: `node <unpacked>/bin/cli.mjs init --spec "file:///path/to/opencode-chorus-x.y.z.tgz"`.
 
+The `setup` command goes further: init **plus** the whole unattended
+onboarding (install the embedded daemon runtime, login with unattended
+defaults, register start-at-login, start now) in one deterministic command
+under plain node — no OpenCode session, no model in the loop. With
+`CHORUS_URL` / `CHORUS_API_KEY` exported, and a Chorus platform serving this
+package's tarball at `<CHORUS_URL>/opencode-chorus-<version>.tgz`:
+
+```bash
+npx -y <CHORUS_URL>/opencode-chorus-<version>.tgz setup
+```
+
+It defaults the plugin spec to that same platform tarball URL (override with
+`--spec`), and accepts `--url` / `--api-key` / `--workdir` when the env vars
+are not set. Idempotent — re-run it any time to repair the installation.
+
 ## Documentation
 
 | Document | Description |
