@@ -53,9 +53,28 @@ export type SetupManager = {
   ctl(action: string): Promise<{ code: number; stdout: string; stderr: string }>
 }
 
+export type RipgrepResult = { ok: boolean; installed: boolean; detail: string }
+
+export function ensureRipgrep(
+  chorusUrl: string,
+  io?: {
+    platform?: string
+    home?: string
+    existsSync?: (target: string) => boolean
+    whichRg?: () => boolean
+    download?: (url: string) => Promise<Buffer>
+    extract?: (archive: Buffer) => void
+  },
+): Promise<RipgrepResult>
+
 export type RunSetupIo = RunInitIo & {
   manager?: SetupManager
   loadManager?: () => Promise<new (opts: { chorusUrl: string; apiKey: string }) => SetupManager>
+  platform?: string
+  whichRg?: () => boolean
+  download?: (url: string) => Promise<Buffer>
+  extract?: (archive: Buffer) => void
+  ensureRipgrep?: (chorusUrl: string, io?: unknown) => Promise<RipgrepResult>
 }
 
 export function runSetup(
@@ -68,4 +87,5 @@ export function runSetup(
   removedMcp: boolean
   ok: boolean
   steps: Array<{ step: string; ok: boolean; detail: string }>
+  ripgrep: RipgrepResult
 }>

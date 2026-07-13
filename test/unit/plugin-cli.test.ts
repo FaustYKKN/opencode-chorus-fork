@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import {
+  ensureRipgrep,
   isThisPlugin,
   mergePluginEntry,
   ownTarballName,
@@ -161,6 +162,7 @@ describe("cli runSetup", () => {
         mkdirSync: () => {},
         log: () => {},
         manager,
+        ensureRipgrep: async () => ({ ok: true, installed: false, detail: "stubbed" }),
       },
     }
   }
@@ -214,5 +216,62 @@ describe("cli runSetup", () => {
     expect(ownTarballName({ name: "@tixiao/opencode-chorus", version: "0.11.0" })).toBe(
       "tixiao-opencode-chorus-0.11.0.tgz",
     )
+  })
+})
+
+describe("cli ensureRipgrep", () => {
+  it("short-circuits when rg is already in opencode's bin dir or on PATH", async () => {
+    const inBin = await ensureRipgrep("http://h", {
+      platform: "win32",
+      home: "C:\\Users\\dev",
+      existsSync: () => true,
+      whichRg: () => false,
+    })
+    expect(inBin).toMatchObject({ ok: true, installed: false })
+
+    const onPath = await ensureRipgrep("http://h", {
+      platform: "linux",
+      home: "/home/dev",
+      existsSync: () => false,
+      whichRg: () => true,
+    })
+    expect(onPath).toMatchObject({ ok: true, installed: false })
+  })
+
+  it("downloads the platform archive and extracts when missing", async () => {
+    const fetched: string[] = []
+    const extracted: Buffer[] = []
+    const result = await ensureRipgrep("http://10.0.4.14:8637", {
+      platform: "win32",
+      home: "C:\\Users\\dev",
+      existsSync: () => false,
+      whichRg: () => false,
+      download: async (url: string) => {
+        fetched.push(url)
+        return Buffer.from("zip-bytes")
+      },
+      extract: (archive: Buffer) => {
+        extracted.push(archive)
+      },
+    })
+    expect(result.ok).toBe(true)
+    expect(result.installed).toBe(true)
+    expect(fetched).toEqual(["http://10.0.4.14:8637/ripgrep-win64.zip"])
+    expect(extracted).toHaveLength(1)
+  })
+
+  it("reports failure without throwing when the download fails", async () => {
+    const result = await ensureRipgrep("http://h", {
+      platform: "win32",
+      home: "C:\\Users\\dev",
+      existsSync: () => false,
+      whichRg: () => false,
+      download: async () => {
+        throw new Error("HTTP 404")
+      },
+    })
+    expect(result.ok).toBe(false)
+    expect(result.detail).toMatch(/HTTP 404/)
+    expect(result.detail).toMatch(/manually/)
   })
 })

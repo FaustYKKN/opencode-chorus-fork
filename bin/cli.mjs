@@ -21,7 +21,8 @@
 // Zero dependencies (node builtins only) so `npx <package> init` works before
 // anything else is installed. Pure helpers are exported for tests.
 
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -155,6 +156,84 @@ async function loadDaemonManager() {
 }
 
 /**
+ * OpenCode's skill discovery shells out to ripgrep; on a missing `rg`,
+ * OpenCode tries to download it FROM GITHUB — which fails on intranet
+ * machines, and with it the whole chorus skill ("Skill chorus failed:
+ * ripgrep execution failed"). Install rg from the Chorus platform instead,
+ * into OpenCode's own managed location (~/.cache/opencode/bin), which both
+ * the CLI and the desktop client consult before downloading.
+ *
+ * Returns { ok, detail, installed }. Failure is reported, never thrown —
+ * the daemon works without skills; they just make sessions smarter.
+ */
+export async function ensureRipgrep(chorusUrl, io = {}) {
+  const platform = io.platform ?? process.platform
+  const home = io.home ?? os.homedir()
+  const exists = io.existsSync ?? existsSync
+  const binDir = path.join(home, ".cache", "opencode", "bin")
+  const rgPath = path.join(binDir, platform === "win32" ? "rg.exe" : "rg")
+
+  if (exists(rgPath)) return { ok: true, installed: false, detail: `ripgrep already present at ${rgPath}` }
+  const onPath = io.whichRg ?? (() => {
+    const probe = spawnSync(platform === "win32" ? "where" : "which", ["rg"], { encoding: "utf8" })
+    return probe.status === 0
+  })
+  if (onPath()) return { ok: true, installed: false, detail: "ripgrep already on PATH" }
+
+  const archive = platform === "win32" ? "ripgrep-win64.zip" : "ripgrep-linux-x64.tar.gz"
+  const url = `${chorusUrl}/${archive}`
+  try {
+    const download = io.download ?? (async (target) => {
+      const res = await fetch(target)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      return Buffer.from(await res.arrayBuffer())
+    })
+    const buffer = await download(url)
+
+    const extract = io.extract ?? ((archiveBuffer) => {
+      const tmp = mkdtempSync(path.join(os.tmpdir(), "chorus-rg-"))
+      try {
+        const archivePath = path.join(tmp, archive)
+        writeFileSync(archivePath, archiveBuffer)
+        // bsdtar (Windows 10+, macOS, most Linuxes) reads both zip and tar.gz.
+        const untar = spawnSync("tar", ["-xf", archivePath, "-C", tmp], { encoding: "utf8" })
+        if (untar.status !== 0) throw new Error(`tar failed: ${(untar.stderr || "").trim() || `exit ${untar.status}`}`)
+        const wanted = platform === "win32" ? "rg.exe" : "rg"
+        const found = findFileRecursive(tmp, wanted)
+        if (!found) throw new Error(`${wanted} not found inside ${archive}`)
+        mkdirSync(binDir, { recursive: true })
+        copyFileSync(found, rgPath)
+        if (platform !== "win32") chmodSync(rgPath, 0o755)
+      } finally {
+        rmSync(tmp, { recursive: true, force: true })
+      }
+    })
+    extract(buffer)
+    return { ok: true, installed: true, detail: `installed ripgrep to ${rgPath} (from ${url})` }
+  } catch (error) {
+    return {
+      ok: false,
+      installed: false,
+      detail: `could not install ripgrep from ${url}: ${error instanceof Error ? error.message : error} — skills will be unavailable until rg.exe is placed in ${binDir} manually`,
+    }
+  }
+}
+
+function findFileRecursive(dir, name) {
+  for (const entry of readdirSync(dir)) {
+    const full = path.join(dir, entry)
+    const stat = statSync(full)
+    if (stat.isDirectory()) {
+      const nested = findFileRecursive(full, name)
+      if (nested) return nested
+    } else if (entry === name) {
+      return full
+    }
+  }
+  return null
+}
+
+/**
  * Full unattended onboarding in one command: write the plugin config (init),
  * then drive the embedded daemon manager — install runtime, login with
  * unattended defaults, enable start-at-login, start, report status. Pure node;
@@ -195,6 +274,11 @@ export async function runSetup(options = {}, io = {}) {
       : `daemon ${runtime.to} already installed at ${runtime.runtimeEntry}`,
   )
 
+  // Skills engine (non-fatal): OpenCode's skill discovery needs ripgrep, whose
+  // built-in installer pulls from GitHub — serve it from the platform instead.
+  const ripgrep = await (io.ensureRipgrep ?? ensureRipgrep)(chorusUrl, io)
+  log(`${ripgrep.ok ? "✓" : "!"} ripgrep (skills engine): ${ripgrep.detail}`)
+
   const login = await manager.login(options.workdir)
   const loginOk = login.code === 0
   record(
@@ -224,7 +308,7 @@ export async function runSetup(options = {}, io = {}) {
       ? "unattended mode is ACTIVE — this machine now executes platform tasks even with OpenCode closed (local console: http://127.0.0.1:8638)"
       : "setup finished with FAILURES — see the failing step above, fix it, and re-run this same command",
   )
-  return { ...initResult, ok, steps }
+  return { ...initResult, ok, steps, ripgrep }
 }
 
 function usage(log = console.log) {
