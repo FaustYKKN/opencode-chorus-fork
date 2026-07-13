@@ -12,7 +12,7 @@
 // Zero dependencies (node builtins only) so `npx <package> init` works before
 // anything else is installed. Pure helpers are exported for tests.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -23,11 +23,11 @@ export function resolveConfigPath(env = process.env, home = os.homedir()) {
   return path.join(home, ".config", "opencode", "opencode.json")
 }
 
-/** Does a plugin entry refer to THIS plugin (any name/version/scope/file: form)? */
+/** Does a plugin entry refer to THIS plugin (any name/version/scope/file:/URL form)? */
 export function isThisPlugin(entry) {
   if (typeof entry !== "string") return false
   if (/^(@[^/]+\/)?opencode-chorus(@.*)?$/.test(entry)) return true
-  return entry.startsWith("file:") && entry.includes("opencode-chorus")
+  return (entry.startsWith("file:") || /^https?:\/\//.test(entry)) && entry.includes("opencode-chorus")
 }
 
 /** Add (or replace) this plugin's entry in the config's plugin array. */
@@ -131,7 +131,9 @@ function usage(log = console.log) {
 
 const invokedDirectly = (() => {
   try {
-    return process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+    // npm/npx expose the bin as a symlink (node_modules/.bin/opencode-chorus),
+    // so resolve symlinks before comparing against this module's real path.
+    return process.argv[1] ? realpathSync(process.argv[1]) === fileURLToPath(import.meta.url) : false
   } catch {
     return false
   }

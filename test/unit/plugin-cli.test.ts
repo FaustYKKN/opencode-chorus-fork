@@ -9,6 +9,8 @@ describe("cli init helpers", () => {
       "@tixiao/opencode-chorus",
       "@tixiao/opencode-chorus@1.2.3",
       "file:///C:/chorus/opencode-chorus-0.10.0.tgz",
+      "http://10.0.4.14:8637/opencode-chorus-0.10.0.tgz",
+      "https://chorus.internal/opencode-chorus-0.11.0.tgz",
     ]) {
       expect(isThisPlugin(entry)).toBe(true)
     }
