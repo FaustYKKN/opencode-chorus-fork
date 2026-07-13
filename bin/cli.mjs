@@ -92,7 +92,16 @@ export function mergeSkillsPath(config, dir) {
   const skills =
     config.skills && typeof config.skills === "object" && !Array.isArray(config.skills) ? { ...config.skills } : {}
   const paths = Array.isArray(skills.paths) ? [...skills.paths] : []
-  const kept = paths.filter((entry) => typeof entry !== "string" || !/opencode-chorus/i.test(entry))
+  // Stale = OUR plugin installed under OpenCode's evictable package cache
+  // (version-numbered, dies on upgrade/eviction). Deliberately narrow: a
+  // developer checkout whose path merely contains "opencode-chorus" (e.g.
+  // D:\work\opencode-chorus\skills) is the user's business — never touched.
+  const isStaleCacheEntry = (entry) => {
+    if (typeof entry !== "string") return false
+    const unified = entry.replace(/\\/g, "/").toLowerCase()
+    return unified.includes(".cache/opencode/packages/") && unified.includes("opencode-chorus")
+  }
+  const kept = paths.filter((entry) => !isStaleCacheEntry(entry))
   const removedStale = kept.length !== paths.length
   const normalize = (p) => String(p).replace(/[\\/]+$/, "")
   const added = !kept.some((entry) => normalize(entry) === normalize(dir))

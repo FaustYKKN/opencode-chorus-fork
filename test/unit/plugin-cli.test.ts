@@ -151,6 +151,19 @@ describe("cli mergeSkillsPath", () => {
       "C:\\Users\\lingy\\.chorus\\skills",
     ])
   })
+
+  it("never touches a developer checkout whose path merely contains opencode-chorus", () => {
+    const result = mergeSkillsPath(
+      { skills: { paths: ["D:\\work\\opencode-chorus\\skills", "/home/dev/tixiao/opencode-chorus/skills"] } },
+      "/home/dev/.chorus/skills",
+    )
+    expect(result.removedStale).toBe(false)
+    expect((result.config.skills as { paths: string[] }).paths).toEqual([
+      "D:\\work\\opencode-chorus\\skills",
+      "/home/dev/tixiao/opencode-chorus/skills",
+      "/home/dev/.chorus/skills",
+    ])
+  })
 })
 
 describe("cli runSetup", () => {
