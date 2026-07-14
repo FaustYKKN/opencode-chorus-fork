@@ -90,7 +90,7 @@ async function runSetup(manager: DaemonToolManager, workdir: string | undefined)
     step: "login + unattended defaults",
     ok: loginOk,
     detail: loginOk
-      ? `credentials saved; serving directory: ${login.workdir} (wakeConcurrency=1)`
+      ? `credentials saved; serving directory: ${login.workdir}`
       : `login failed: ${`${login.stdout}${login.stderr}`.trim()}`,
   })
   if (!loginOk) return formatToolResult({ action: "setup", ok: false, steps })

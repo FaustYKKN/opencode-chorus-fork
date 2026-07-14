@@ -342,7 +342,7 @@ export async function runSetup(options = {}, io = {}) {
     "login + unattended defaults",
     loginOk,
     loginOk
-      ? `credentials saved; serving directory: ${login.workdir} (wakeConcurrency=1)`
+      ? `credentials saved; serving directory: ${login.workdir}`
       : `login failed: ${`${login.stdout}${login.stderr}`.trim()}`,
   )
   if (!loginOk) return { ...initResult, ok: false, steps }
