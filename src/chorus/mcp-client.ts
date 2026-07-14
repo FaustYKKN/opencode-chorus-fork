@@ -7,6 +7,7 @@ import type { ChorusToolTextContent, McpClientStatus } from "./types"
 export type ChorusMcpClientOptions = {
   chorusUrl: string
   apiKey: string
+  instanceUuid?: string
 }
 
 type McpToolResult = Awaited<ReturnType<Client["callTool"]>>
@@ -170,7 +171,7 @@ export class ChorusMcpClient {
     const client = new Client({ name: "opencode-chorus", version: PACKAGE_VERSION })
     const transport = new StreamableHTTPClientTransport(new URL(resolveChorusMcpUrl(this.options.chorusUrl)), {
       requestInit: {
-        headers: createChorusMcpHeaders(this.options.apiKey, scope),
+        headers: createChorusMcpHeaders(this.options.apiKey, scope, this.options.instanceUuid),
       },
     })
     return { client, transport }

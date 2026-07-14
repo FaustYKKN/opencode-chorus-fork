@@ -46,6 +46,7 @@ export const createPlugin: Plugin = async (ctx, options) => {
   const chorusClient = createChorusMcpClient({
     chorusUrl: config.chorusUrl,
     apiKey: config.apiKey,
+    instanceUuid: config.instanceUuid,
   })
   // Forward reference so lazyBridge and readiness can reference each other.
   // readiness is assigned below before either is ever called at runtime.
@@ -97,6 +98,7 @@ export const createPlugin: Plugin = async (ctx, options) => {
   const notificationCoordinator = new NotificationCoordinator({
     chorusUrl: config.chorusUrl,
     apiKey: config.apiKey,
+    instanceUuid: config.instanceUuid,
     projectUuids: config.projectUuids,
     enableNotificationHints: config.enableNotificationHints,
     directory: ctx.directory,

@@ -1,4 +1,12 @@
-export type SseNotificationEvent = { type: string; notificationUuid?: string }
+export type SseNotificationEvent = {
+  type: string
+  notificationUuid?: string
+  /** Present on the connection_registered handshake event. */
+  connectionUuid?: string
+  /** Directed-delivery transport fields (stamped per-event by the server). */
+  targetConnectionUuid?: string | null
+  suppressWake?: boolean
+}
 export type SseListenerStatus = "connected" | "disconnected" | "reconnecting"
 
 type ChorusSseListenerOptions = {
@@ -46,6 +54,7 @@ export class ChorusSseListener {
   private reconnectDelayTimer: ReturnType<typeof setTimeout> | null = null
   private reconnectDelayResolve: (() => void) | null = null
   private stopped = false
+  private ownConnectionUuid: string | null = null
 
   constructor(
     private readonly chorusUrl: string,
@@ -56,6 +65,11 @@ export class ChorusSseListener {
 
   get status(): SseListenerStatus {
     return this.statusValue
+  }
+
+  /** This listener's AgentInstance uuid, learned from the connection_registered handshake. */
+  get connectionUuid(): string | null {
+    return this.ownConnectionUuid
   }
 
   async connect(): Promise<void> {
@@ -136,7 +150,12 @@ export class ChorusSseListener {
         if (done) break
         const parsed = parseSseNotificationChunk(buffer, decoder.decode(value, { stream: true }))
         buffer = parsed.buffer
-        for (const event of parsed.events) this.onEvent(event)
+        for (const event of parsed.events) {
+          if (event.type === "connection_registered" && typeof event.connectionUuid === "string") {
+            this.ownConnectionUuid = event.connectionUuid
+          }
+          this.onEvent(event)
+        }
       }
     } finally {
       reader.releaseLock()

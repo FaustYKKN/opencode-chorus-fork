@@ -30,6 +30,8 @@ type Logger = {
 type NotificationCoordinatorOptions = {
   chorusUrl: string
   apiKey: string
+  /** Daemon-injected AgentInstance uuid (woken sessions); fallback identity before SSE handshake. */
+  instanceUuid?: string
   projectUuids?: string[]
   enableNotificationHints: boolean
   directory: string
@@ -91,6 +93,28 @@ export class NotificationCoordinator {
 
   async handleSseEvent(event: SseNotificationEvent): Promise<void> {
     if (event.type !== "new_notification" || !event.notificationUuid) return
+
+    // Directed-delivery suppression (mirrors the daemon's EventRouter): the
+    // notification stream is per-AGENT, so every connection gets a copy of a
+    // pinned wake. A copy addressed to a DIFFERENT instance must be ignored,
+    // otherwise a busy session in directory B happily executes work pinned to
+    // directory A. suppressWake marks an offline pin: nobody may act on it.
+    if (event.suppressWake === true) return
+    const target =
+      typeof event.targetConnectionUuid === "string" && event.targetConnectionUuid
+        ? event.targetConnectionUuid
+        : null
+    if (target) {
+      const me = this.listener?.connectionUuid ?? this.options.instanceUuid ?? null
+      if (target !== me) {
+        await this.options.logger.info("Suppressed a Chorus notification directed to another instance", {
+          notificationUuid: event.notificationUuid,
+          target,
+          self: me,
+        })
+        return
+      }
+    }
     const notification = await fetchNotificationByUuid(this.options.chorusClient, event.notificationUuid)
     if (!notification) {
       await this.options.logger.warn("Chorus notification SSE event could not be resolved", {

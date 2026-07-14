@@ -19,10 +19,18 @@ export type ChorusMcpScope = {
   projectGroupUuid?: string
 }
 
-export function createChorusMcpHeaders(apiKey: string, scope?: ChorusMcpScope): Record<string, string> {
+export function createChorusMcpHeaders(
+  apiKey: string,
+  scope?: ChorusMcpScope,
+  instanceUuid?: string,
+): Record<string, string> {
   const headers: Record<string, string> = {
     Authorization: `Bearer ${apiKey}`,
   }
+
+  // Instance identity for pinned-task affinity: lets the server reject claims
+  // on tasks pinned to a different machine+directory instance.
+  if (instanceUuid) headers["X-Chorus-Instance"] = instanceUuid
 
   if (scope?.projectGroupUuid) headers["X-Chorus-Project-Group"] = scope.projectGroupUuid
   else if (scope?.projectUuid) headers["X-Chorus-Project"] = scope.projectUuid

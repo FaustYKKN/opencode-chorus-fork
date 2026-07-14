@@ -715,3 +715,66 @@ describe("NotificationCoordinator", () => {
     }
   })
 })
+
+describe("NotificationCoordinator directed-delivery suppression", () => {
+  function coordinatorProbe(instanceUuid?: string) {
+    const fetched: string[] = []
+    const coordinator = new NotificationCoordinator({
+      chorusUrl: "http://chorus.test",
+      apiKey: "key",
+      instanceUuid,
+      projectUuids: [],
+      enableNotificationHints: false,
+      directory: "/tmp/nowhere",
+      stateStore: {} as never,
+      chorusClient: {
+        callTool: async (_name: string, args: Record<string, unknown>) => {
+          fetched.push(String(args?.notificationUuid ?? "list"))
+          // Empty list: handleSseEvent resolves nothing further — the probe only
+          // cares whether the fetch was attempted (i.e. the event survived the gate).
+          return { notifications: [] }
+        },
+      } as never,
+      client: { tui: { showToast: async () => true } } as never,
+      logger: { debug: async () => {}, info: async () => {}, warn: async () => {}, error: async () => {} },
+    })
+    return { coordinator, fetched }
+  }
+
+  it("ignores an offline-pin event (suppressWake) on every instance", async () => {
+    const { coordinator, fetched } = coordinatorProbe("inst-a")
+    await coordinator.handleSseEvent({ type: "new_notification", notificationUuid: "n1", suppressWake: true })
+    expect(fetched).toHaveLength(0)
+  })
+
+  it("ignores an event directed to a different instance", async () => {
+    const { coordinator, fetched } = coordinatorProbe("inst-a")
+    await coordinator.handleSseEvent({
+      type: "new_notification",
+      notificationUuid: "n2",
+      targetConnectionUuid: "inst-b",
+    })
+    expect(fetched).toHaveLength(0)
+  })
+
+  it("processes an event directed to THIS instance, and un-pinned events", async () => {
+    const { coordinator, fetched } = coordinatorProbe("inst-a")
+    await coordinator.handleSseEvent({
+      type: "new_notification",
+      notificationUuid: "n3",
+      targetConnectionUuid: "inst-a",
+    })
+    await coordinator.handleSseEvent({ type: "new_notification", notificationUuid: "n4" })
+    expect(fetched.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it("suppresses directed events when it has no identity at all (cannot prove target)", async () => {
+    const { coordinator, fetched } = coordinatorProbe(undefined)
+    await coordinator.handleSseEvent({
+      type: "new_notification",
+      notificationUuid: "n5",
+      targetConnectionUuid: "inst-b",
+    })
+    expect(fetched).toHaveLength(0)
+  })
+})

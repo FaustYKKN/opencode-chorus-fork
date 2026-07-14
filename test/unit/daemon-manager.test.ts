@@ -150,7 +150,7 @@ describe("DaemonManager.resolveNode", () => {
 })
 
 describe("DaemonManager.login", () => {
-  it("runs the bundled login verb, then applies wakeConcurrency=1 and a default served dir", async () => {
+  it("runs the bundled login verb, then applies wakeConcurrency=4 and a default served dir", async () => {
     const io = fakeIo({
       files: {
         ...embeddedFiles(),
@@ -169,7 +169,7 @@ describe("DaemonManager.login", () => {
     expect(io.mkdirs).toContain("/home/dev/opencode-auto-work")
 
     const saved = JSON.parse(io.writes.at(-1)!.content)
-    expect(saved.wakeConcurrency).toBe(1)
+    expect(saved.wakeConcurrency).toBe(4)
     expect(saved.cwds).toEqual(["/home/dev/opencode-auto-work"])
     expect(io.writes.at(-1)!.mode).toBe(0o600)
   })

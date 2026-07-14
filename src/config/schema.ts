@@ -23,6 +23,8 @@ export type StateMode = "global" | "project"
 export type OpenCodeChorusConfig = {
   chorusUrl: string
   apiKey: string
+  /** AgentInstance uuid injected by the daemon for woken sessions (CHORUS_INSTANCE_UUID). */
+  instanceUuid?: string
   projectUuids: string[]
   enableProposalReviewer: boolean
   enableTaskReviewer: boolean
@@ -59,9 +61,12 @@ export function resolveConfig(input: Record<string, unknown>): OpenCodeChorusCon
   if (!chorusUrl) throw new MissingRequiredConfigError("chorusUrl")
   if (!apiKey) throw new MissingRequiredConfigError("apiKey")
 
+  const instanceUuid = String(input.instanceUuid ?? "").trim()
+
   return {
     chorusUrl,
     apiKey,
+    instanceUuid: instanceUuid || undefined,
     projectUuids: Array.isArray(input.projectUuids)
       ? input.projectUuids.map((item) => String(item))
       : [],

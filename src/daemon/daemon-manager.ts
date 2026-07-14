@@ -223,7 +223,10 @@ export class DaemonManager {
     } catch {
       // login just wrote it; a read failure here still yields a valid rewrite below
     }
-    if (config.wakeConcurrency === undefined) config.wakeConcurrency = 1
+    // Default wake concurrency 4 (upstream default). Early pilot setups wrote 1
+    // (fully serialized), which in practice just queued directed wakes behind
+    // unrelated work — migrate that old default forward too.
+    if (config.wakeConcurrency === undefined || config.wakeConcurrency === 1) config.wakeConcurrency = 4
 
     const existing = Array.isArray(config.cwds) ? (config.cwds as unknown[]).filter((c): c is string => typeof c === "string") : []
     let resolved: string

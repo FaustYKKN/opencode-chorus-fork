@@ -88,6 +88,7 @@ function parseEnvConfig(env: ChorusConfigEnv): PartialConfig {
   return stripUndefined({
     chorusUrl: firstNonEmpty(env.CHORUS_BASE_URL, env.CHORUS_URL),
     apiKey: nonEmpty(env.CHORUS_API_KEY),
+    instanceUuid: nonEmpty(env.CHORUS_INSTANCE_UUID),
     projectUuids: parseCsv(env.CHORUS_PROJECT_UUIDS),
     stateMode: parseStateMode(env.CHORUS_STATE_MODE),
     globalStateRoot: nonEmpty(env.CHORUS_GLOBAL_STATE_ROOT),

@@ -25956,6 +25956,7 @@ var init_waker = __esm({
         this.cwd = opts.cwd;
         this.hooks = opts.hooks;
         this.agentType = opts.agentType ?? "claude-code";
+        this.getConnectionUuid = opts.getConnectionUuid ?? (() => null);
         this.logger = opts.logger ?? NOOP_LOGGER9;
         this.writeMcpConfigFn = opts.writeMcpConfigFn ?? writeMcpConfig;
         this.isNewSessionFn = opts.isNewSessionFn ?? isNewSession;
@@ -26189,6 +26190,7 @@ var init_waker = __esm({
             sessionId,
             isNew,
             cwd,
+            instanceUuid: this.getConnectionUuid() ?? null,
             mcpConfigPath: cfg.path,
             // Capture the live child into the running execution entry the instant it
             // spawns (子3) so the control handler can interrupt it mid-wake. Guarded so
@@ -26783,7 +26785,7 @@ var init_opencode_spawner = __esm({
        *           onChild?: (child: import("node:child_process").ChildProcess) => void }} params
        * @returns {Promise<{ sessionId: string, exitCode: number|null, isNew: boolean }>}
        */
-      async wake({ prompt: prompt2, sessionId, cwd, onMessage, onChild }) {
+      async wake({ prompt: prompt2, sessionId, cwd, instanceUuid, onMessage, onChild }) {
         const anchor = typeof sessionId === "string" ? sessionId : "";
         const knownSessionId = anchor ? this.getSessionIdFn(anchor) : null;
         const isNew = !knownSessionId;
@@ -26805,6 +26807,9 @@ var init_opencode_spawner = __esm({
         if (this.creds && this.creds.apiKey) {
           childEnv.CHORUS_API_KEY = this.creds.apiKey;
           if (this.creds.url) childEnv.CHORUS_BASE_URL = this.creds.url;
+        }
+        if (typeof instanceUuid === "string" && instanceUuid) {
+          childEnv.CHORUS_INSTANCE_UUID = instanceUuid;
         }
         return new Promise((resolve2) => {
           let child;
