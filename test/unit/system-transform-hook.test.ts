@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 import {
   PER_TURN_REMINDER,
   PLAN_AGENT_GUIDANCE,
+  PROCESS_SAFETY_GUARDRAIL,
   SUBSESSION_WORKFLOW_GUIDANCE,
   createSystemTransformHook,
 } from "../../src/hooks/system-transform-hook"
@@ -24,6 +25,33 @@ describe("system transform hook", () => {
     expect(output.system).toContain(PER_TURN_REMINDER)
     expect(output.system).not.toContain(PREFER_NATIVE_FILE_TOOLS_GUIDANCE)
     expect(rendered).not.toContain("load the narrowest Chorus skill")
+  })
+
+  it("always injects the process-safety guardrail on both main and sub sessions", async () => {
+    const hook = createSystemTransformHook({
+      stateStore: stateStore({ mainSessionId: "session-1" }),
+      isOpenSpecAvailable: async () => false,
+    })
+    const main = { system: [] as string[] }
+    const sub = { system: [] as string[] }
+
+    await hook({ sessionID: "session-1" } as never, main as never) // main session
+    await hook({ sessionID: "child-session" } as never, sub as never) // sub session
+
+    expect(main.system).toContain(PROCESS_SAFETY_GUARDRAIL)
+    expect(sub.system).toContain(PROCESS_SAFETY_GUARDRAIL) // sub-agents run bash too
+  })
+
+  it("does not inject the process-safety guardrail before activation", async () => {
+    const hook = createSystemTransformHook({
+      stateStore: stateStore({ mainSessionId: "session-1", activated: false }),
+      isOpenSpecAvailable: async () => false,
+    })
+    const output = { system: ["existing"] }
+
+    await hook({ sessionID: "session-1" } as never, output as never)
+
+    expect(output.system).toEqual(["existing"])
   })
 
   it("does not inject Chorus content before activation", async () => {

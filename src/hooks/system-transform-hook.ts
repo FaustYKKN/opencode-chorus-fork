@@ -9,6 +9,16 @@ import { formatStagingDirSystemGuidance } from "../util/staging-guidance"
 export const PER_TURN_REMINDER =
   "[Chorus Plugin Active]\n- Sub-agent sessions are auto-managed by hooks. Do NOT call chorus_create_session or chorus_close_session for sub-agents.\n- When spawning sub-agents, pass Chorus task UUIDs; session lifecycle is auto-injected."
 
+// Always-on process-safety guardrail. The Chorus daemon that dispatches tasks is
+// a Node.js process; the agent itself runs in Bun. So a name-based Node kill —
+// a routine "clean up stuck processes" / "restart the dev server" move — takes
+// out the daemon (and any Node dev servers) WITHOUT touching the agent, cutting
+// the unattended run dead mid-task. On Windows the Startup-folder autostart never
+// brings it back. Names the exact forbidden commands cross-platform so even a
+// weak model can pattern-match them.
+export const PROCESS_SAFETY_GUARDRAIL =
+  "[Chorus Safety] The Chorus daemon that dispatches your tasks runs as a Node.js process; you run in Bun. NEVER kill Node processes by name: no `pkill node`, `pkill -f node`, `killall node`, `taskkill /IM node.exe`, or `Stop-Process -Name node`. Each of these kills the daemon (and any Node dev servers) and cuts you off mid-task without touching your own process — on Windows nothing restarts it. To stop a specific process, target its exact PID or listening port, never the `node` process name."
+
 export const SUBSESSION_WORKFLOW_GUIDANCE =
   "## Chorus Task Workflow\nWhen working on a Chorus task:\n1. Start work: chorus_tool_execute({ toolName: \"chorus_update_task\", arguments: { taskUuid, status: \"in_progress\" } })\n2. Report progress: chorus_tool_execute({ toolName: \"chorus_report_work\", arguments: { taskUuid, report } })\n3. Self-check acceptance criteria against implementation\n4. Submit: chorus_tool_execute({ toolName: \"chorus_submit_for_verify\", arguments: { taskUuid, summary } })\nDo NOT call chorus_create_session or chorus_close_session."
 
@@ -88,6 +98,10 @@ export function createSystemTransformHook(options: CreateSystemTransformHookOpti
 
     const chorusContext = contextState.context
     if (chorusContext) pushSystemMessageOnce(output, chorusContext)
+
+    // Inject for BOTH main and sub sessions (sub-agents run bash too); no opt-out
+    // flag by design — a safety rail you can silently disable isn't one.
+    pushSystemMessageOnce(output, PROCESS_SAFETY_GUARDRAIL)
 
     if (!isSubSession && options.enablePerTurnReminder !== false) {
       pushSystemMessageOnce(output, PER_TURN_REMINDER)
