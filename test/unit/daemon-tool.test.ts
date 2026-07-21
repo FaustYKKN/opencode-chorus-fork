@@ -44,7 +44,7 @@ describe("chorus_daemon tool", () => {
 
     const result = JSON.parse((await definition.execute({ action: "setup" }, ctx)) as string)
 
-    expect(manager.calls).toEqual(["ensureRuntime", "login:", "autostart:true", "ctl:start", "ctl:status"])
+    expect(manager.calls).toEqual(["ensureRuntime", "login:", "autostart:true", "ctl:restart", "ctl:status"])
     expect(result.ok).toBe(true)
     expect(result.steps.map((step: { step: string }) => step.step)).toEqual([
       "install runtime",
@@ -70,18 +70,31 @@ describe("chorus_daemon tool", () => {
     expect(manager.calls).not.toContain("autostart:true")
   })
 
-  it("setup treats an already-running daemon start as success", async () => {
+  it("setup restarts (not starts) the daemon so a stale one is replaced", async () => {
+    const manager = fakeManager()
+    const definition = createDaemonTool({ manager })
+
+    await definition.execute({ action: "setup" }, ctx)
+
+    // Must restart — a plain start no-ops on an already-running stale daemon and
+    // strands the old code/identity.
+    expect(manager.calls).toContain("ctl:restart")
+    expect(manager.calls).not.toContain("ctl:start")
+  })
+
+  it("setup reports a failed daemon restart as a failure", async () => {
     const manager = fakeManager({
       ctl: async (action) => {
         manager.calls.push(`ctl:${action}`)
-        if (action === "start") return { code: 1, stdout: "", stderr: "a daemon is already running (pid 7)" }
+        if (action === "restart") return { code: 1, stdout: "", stderr: "failed to restart the service" }
         return { code: 0, stdout: "daemon is running (pid 7)", stderr: "" }
       },
     })
     const definition = createDaemonTool({ manager })
 
     const result = JSON.parse((await definition.execute({ action: "setup" }, ctx)) as string)
-    expect(result.ok).toBe(true)
+    expect(result.ok).toBe(false)
+    expect(result.steps.find((s: { step: string }) => s.step === "start daemon").ok).toBe(false)
   })
 
   it("threads the optional workdir into login", async () => {

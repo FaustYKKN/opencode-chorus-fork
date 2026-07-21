@@ -98,10 +98,14 @@ async function runSetup(manager: DaemonToolManager, workdir: string | undefined)
   const autostart = await manager.autostart(true)
   steps.push({ step: "enable start-at-login", ok: autostart.ok, detail: autostart.detail })
 
-  const start = await manager.ctl("start")
+  // setup just installed a fresh daemon binary + credentials, so any daemon left
+  // over from a previous install must be REPLACED, not left running. Use restart
+  // (stop-then-start against the just-persisted creds) instead of start, which
+  // no-ops when a stale daemon is already up — that stranded the old code and old
+  // identity, the classic "I re-ran setup but nothing changed" trap.
+  const start = await manager.ctl("restart")
   const startOutput = `${start.stdout}${start.stderr}`.trim()
-  // "already running" is a success for setup's purposes — the daemon is up.
-  const startOk = start.code === 0 || /already running/i.test(startOutput)
+  const startOk = start.code === 0
   steps.push({ step: "start daemon", ok: startOk, detail: startOutput })
 
   const status = await manager.ctl("status")

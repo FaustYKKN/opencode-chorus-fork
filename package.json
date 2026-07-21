@@ -1,6 +1,6 @@
 {
   "name": "opencode-chorus",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "OpenCode plugin for Chorus MCP workflow, planning, and reviewer automation.",
   "license": "AGPL-3.0-only",
   "type": "module",

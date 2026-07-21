@@ -247,10 +247,16 @@ export class DaemonManager {
   /** Drive a daemon lifecycle verb through the runtime bundle's CLI. */
   async ctl(action: CtlAction): Promise<RunResult> {
     const node = this.requireNode()
+    // `restart` must carry the SAME --agent/--yolo flags as `start`: the CLI's
+    // restart re-execs the plain `daemon` run (stripping the "restart" verb), and
+    // agent type is NOT persisted (resolveAgentType falls back to claude-code),
+    // so a flagless restart would silently switch this machine off opencode.
     const args =
       action === "start"
         ? [this.runtimeEntry(), "daemon", "-d", "--agent", "opencode", "--yolo"]
-        : [this.runtimeEntry(), "daemon", action]
+        : action === "restart"
+          ? [this.runtimeEntry(), "daemon", "restart", "--agent", "opencode", "--yolo"]
+          : [this.runtimeEntry(), "daemon", action]
     return this.io.runCapture(node, args)
   }
 

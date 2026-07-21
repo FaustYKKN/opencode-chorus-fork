@@ -228,6 +228,15 @@ describe("DaemonManager.ctl", () => {
     expect(io.runs[1]!.args).toEqual(["/home/dev/.chorus/runtime/chorus-daemon.mjs", "daemon", "status"])
   })
 
+  it("restart carries the same --agent/--yolo flags as start (agent type is not persisted)", async () => {
+    const io = fakeIo({ files: embeddedFiles(), existingPaths: ["/usr/bin/node"], env: { PATH: "/usr/bin" } })
+    const m = manager(io)
+
+    await m.ctl("restart")
+
+    expect(io.runs[0]!.args).toEqual(["/home/dev/.chorus/runtime/chorus-daemon.mjs", "daemon", "restart", "--agent", "opencode", "--yolo"])
+  })
+
   it("throws a clear error when node is unavailable", async () => {
     const io = fakeIo({ files: embeddedFiles(), env: {} })
     await expect(manager(io).ctl("status")).rejects.toThrow(/Node\.js 20\+ was not found/)
