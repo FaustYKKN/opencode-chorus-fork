@@ -24943,6 +24943,19 @@ var init_event_router = __esm({
         this.getConnectionUuid = opts.getConnectionUuid ?? (() => null);
         this.logger = opts.logger ?? NOOP_LOGGER5;
         this.seen = opts.seen ?? /* @__PURE__ */ new Set();
+        this.serveCwd = opts.serveCwd ?? null;
+      }
+      /**
+       * The wake queue's serialization lane for a wake (Layer 1). Same served cwd →
+       * same lane → strictly serial (no two opencode in one working tree); different
+       * cwds → different lanes → concurrent up to the global cap. The idea/entity
+       * `key` is STILL passed to wake()/markQueued for server-side attribution and the
+       * session anchor — only the LOCAL serialization lane changes here.
+       * @param {string} ideaKey  keyFor()'s idea/entity key (the pre-Layer-1 lane)
+       * @returns {string}
+       */
+      #laneKey(ideaKey) {
+        return this.serveCwd != null ? `cwd:${this.serveCwd}` : ideaKey;
       }
       /**
        * Handle one SSE event. Synchronous + non-throwing: it kicks off async
@@ -25157,7 +25170,7 @@ var init_event_router = __esm({
         } catch (err) {
           this.logger.warn(`[Chorus] markQueued failed for pending turn ${turnUuid}: ${err}`);
         }
-        this.queue.enqueue(key, () => this.waker.wake(n, key, attribution));
+        this.queue.enqueue(this.#laneKey(key), () => this.waker.wake(n, key, attribution));
       }
       /**
        * Re-dispatch a DIRECTED autonomous pending turn (mentioned / task_assigned /
@@ -25267,7 +25280,7 @@ var init_event_router = __esm({
         } catch (err) {
           this.logger.warn(`[Chorus] markQueued failed for ${label}: ${err}`);
         }
-        this.queue.enqueue(key, () => this.waker.wake(n, key, attribution));
+        this.queue.enqueue(this.#laneKey(key), () => this.waker.wake(n, key, attribution));
       }
     };
   }
@@ -26223,7 +26236,7 @@ var init_waker = __esm({
             if (cleanExit) {
               await this.#advanceTurn(sessionId, "ended", entity);
             } else {
-              const reason = wasInterrupting ? "user" : this.shuttingDown ? "shutdown" : "crash";
+              const reason = wasInterrupting ? "user" : this.shuttingDown ? "shutdown" : result && result.timedOut ? "timed_out" : "crash";
               await this.#advanceTurn(sessionId, "interrupted", entity, reason);
             }
           }
@@ -26702,6 +26715,12 @@ var init_opencode_session_map = __esm({
 import { spawn as spawn3 } from "node:child_process";
 import { statSync as statSync3 } from "node:fs";
 import { win32 as pathWin323, posix as pathPosix3 } from "node:path";
+function envMs(name, def) {
+  const raw = process.env[name];
+  if (raw == null || raw === "") return def;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : def;
+}
 function permissionFlags(permissionMode) {
   return permissionMode === "yolo" ? ["--auto"] : [];
 }
@@ -26772,6 +26791,10 @@ var init_opencode_spawner = __esm({
         this.getSessionIdFn = opts.getSessionIdFn ?? getSessionId;
         this.setSessionIdFn = opts.setSessionIdFn ?? setSessionId;
         this.resolveOpencodePathFn = opts.resolveOpencodePathFn ?? resolveOpencodePath;
+        this.idleTimeoutMs = opts.idleTimeoutMs ?? envMs("CHORUS_WAKE_IDLE_TIMEOUT_MS", 12 * 60 * 1e3);
+        this.maxMs = opts.maxMs ?? envMs("CHORUS_WAKE_MAX_MS", 40 * 60 * 1e3);
+        this.checkIntervalMs = opts.checkIntervalMs ?? 15 * 1e3;
+        this.now = opts.now ?? (() => Date.now());
       }
       /**
        * Spawn a headless opencode run. Resolves when the subprocess exits. The
@@ -26834,10 +26857,30 @@ var init_opencode_spawner = __esm({
               this.logger.warn(`[Chorus] onChild handler threw: ${err}`);
             }
           }
+          const wakeStart = this.now();
+          let lastOutput = wakeStart;
+          let timedOut = false;
+          const monitor = setInterval(() => {
+            const now = this.now();
+            const idle = this.idleTimeoutMs > 0 && now - lastOutput > this.idleTimeoutMs;
+            const over = this.maxMs > 0 && now - wakeStart > this.maxMs;
+            if (idle || over) {
+              timedOut = true;
+              this.logger.warn(
+                `[Chorus] killing opencode wake \u2014 ${idle ? `no output for ${Math.round((now - lastOutput) / 1e3)}s (idle)` : `over ${Math.round((now - wakeStart) / 1e3)}s budget`}`
+              );
+              try {
+                child.kill("SIGKILL");
+              } catch {
+              }
+            }
+          }, this.checkIntervalMs);
+          if (typeof monitor.unref === "function") monitor.unref();
           let stdoutBuf = "";
           let observedSessionId = knownSessionId || null;
           child.stdout?.setEncoding?.("utf8");
           child.stdout?.on("data", (chunk) => {
+            lastOutput = this.now();
             stdoutBuf = parseNdjsonChunk(
               stdoutBuf,
               String(chunk),
@@ -26860,21 +26903,24 @@ var init_opencode_spawner = __esm({
           });
           child.stderr?.setEncoding?.("utf8");
           child.stderr?.on("data", (chunk) => {
+            lastOutput = this.now();
             const text = String(chunk).trim();
             if (text) this.logger.warn(`[Chorus] opencode stderr: ${text}`);
           });
           child.on("error", (err) => {
+            clearInterval(monitor);
             this.logger.error(`[Chorus] opencode process error: ${err}`);
-            resolve2({ sessionId: observedSessionId || anchor, exitCode: null, isNew });
+            resolve2({ sessionId: observedSessionId || anchor, exitCode: null, isNew, timedOut });
           });
           child.on("close", (code) => {
+            clearInterval(monitor);
             if (code !== 0) {
               this.logger.warn(`[Chorus] opencode exited with code ${code}`);
             }
             if (code === 0 && isNew && anchor && observedSessionId) {
               this.setSessionIdFn(anchor, observedSessionId);
             }
-            resolve2({ sessionId: observedSessionId || anchor, exitCode: code, isNew });
+            resolve2({ sessionId: observedSessionId || anchor, exitCode: code, isNew, timedOut });
           });
           child.stdin?.on?.("error", (err) => {
             this.logger.warn(`[Chorus] opencode stdin error (ignored): ${err}`);
@@ -28020,6 +28066,12 @@ function buildDaemon(creds, deps = {}) {
       wakeActions: WAKE_ACTIONS,
       seen,
       getConnectionUuid: () => connectionState.connectionUuid,
+      // Layer 1 — per-cwd wake serialization. This connection's served directory
+      // (resolveCwd is the single cwd source of truth; a connection's cwd never
+      // changes — NFR-3) becomes the wake queue lane, so two wakes for the SAME
+      // directory serialize (never two opencode in one working tree) while
+      // different directories run concurrently up to the queue's global cap.
+      serveCwd: waker.resolveCwd(),
       logger
     });
     const redispatchResume = (entityType, entityUuid, resumeReason) => {
