@@ -26774,6 +26774,7 @@ var init_opencode_spawner = __esm({
     "use strict";
     init_claude_spawner();
     init_codex_spawner();
+    init_process_killer();
     init_opencode_session_map();
     NOOP_LOGGER13 = { info() {
     }, warn() {
@@ -26792,8 +26793,9 @@ var init_opencode_spawner = __esm({
         this.setSessionIdFn = opts.setSessionIdFn ?? setSessionId;
         this.resolveOpencodePathFn = opts.resolveOpencodePathFn ?? resolveOpencodePath;
         this.idleTimeoutMs = opts.idleTimeoutMs ?? envMs("CHORUS_WAKE_IDLE_TIMEOUT_MS", 12 * 60 * 1e3);
-        this.maxMs = opts.maxMs ?? envMs("CHORUS_WAKE_MAX_MS", 40 * 60 * 1e3);
+        this.maxMs = opts.maxMs ?? envMs("CHORUS_WAKE_MAX_MS", 90 * 60 * 1e3);
         this.checkIntervalMs = opts.checkIntervalMs ?? 15 * 1e3;
+        this.killer = opts.killer ?? killProcessTree;
         this.now = opts.now ?? (() => Date.now());
       }
       /**
@@ -26866,13 +26868,13 @@ var init_opencode_spawner = __esm({
             const over = this.maxMs > 0 && now - wakeStart > this.maxMs;
             if (idle || over) {
               timedOut = true;
+              clearInterval(monitor);
               this.logger.warn(
                 `[Chorus] killing opencode wake \u2014 ${idle ? `no output for ${Math.round((now - lastOutput) / 1e3)}s (idle)` : `over ${Math.round((now - wakeStart) / 1e3)}s budget`}`
               );
-              try {
-                child.kill("SIGKILL");
-              } catch {
-              }
+              Promise.resolve(
+                this.killer(child, { platform: this.platform, logger: this.logger })
+              ).catch((err) => this.logger.warn(`[Chorus] runaway killProcessTree rejected: ${err}`));
             }
           }, this.checkIntervalMs);
           if (typeof monitor.unref === "function") monitor.unref();
