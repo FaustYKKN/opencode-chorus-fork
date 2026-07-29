@@ -26792,8 +26792,8 @@ var init_opencode_spawner = __esm({
         this.getSessionIdFn = opts.getSessionIdFn ?? getSessionId;
         this.setSessionIdFn = opts.setSessionIdFn ?? setSessionId;
         this.resolveOpencodePathFn = opts.resolveOpencodePathFn ?? resolveOpencodePath;
-        this.idleTimeoutMs = opts.idleTimeoutMs ?? envMs("CHORUS_WAKE_IDLE_TIMEOUT_MS", 12 * 60 * 1e3);
-        this.maxMs = opts.maxMs ?? envMs("CHORUS_WAKE_MAX_MS", 90 * 60 * 1e3);
+        this.idleTimeoutMs = opts.idleTimeoutMs ?? envMs("CHORUS_WAKE_IDLE_TIMEOUT_MS", 30 * 60 * 1e3);
+        this.maxMs = opts.maxMs ?? envMs("CHORUS_WAKE_MAX_MS", 120 * 60 * 1e3);
         this.checkIntervalMs = opts.checkIntervalMs ?? 15 * 1e3;
         this.killer = opts.killer ?? killProcessTree;
         this.now = opts.now ?? (() => Date.now());
