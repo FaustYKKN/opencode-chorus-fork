@@ -205,6 +205,54 @@ describe("DaemonManager.login", () => {
     expect(io.writes.length).toBe(0)
   })
 
+  it("recovers when login crashes on exit AFTER persisting creds (Windows UV_HANDLE_CLOSING)", async () => {
+    const io = fakeIo({
+      files: {
+        ...embeddedFiles(),
+        // The login child wrote creds (incl. identity) before aborting on exit.
+        "/home/dev/.chorus/daemon.json": JSON.stringify({
+          url: "http://x",
+          apiKey: "cho_k",
+          agentUuid: "9232efce-1dd2-4fb1-bbf1-0529c5f27cc0",
+          agentName: "小旋_在线",
+        }),
+      },
+      existingPaths: ["/usr/bin/node"],
+      env: { PATH: "/usr/bin" },
+      runResults: [
+        {
+          code: 3,
+          stdout:
+            "Logged in as 小旋_在线 (9232efce-1dd2-4fb1-bbf1-0529c5f27cc0).\nCredentials saved to /home/dev/.chorus/daemon.json.\n",
+          stderr: "Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\\win\\async.c, line 94\n",
+        },
+      ],
+    })
+    const result = await manager(io, { chorusUrl: "http://x", apiKey: "cho_k" }).login()
+
+    // Treated as success: exit code normalized, unattended defaults applied.
+    expect(result.code).toBe(0)
+    expect(result.workdir).toBe("/home/dev/opencode-auto-work")
+    const saved = JSON.parse(io.writes.at(-1)!.content)
+    expect(saved.wakeConcurrency).toBe(4)
+    expect(saved.cwds).toEqual(["/home/dev/opencode-auto-work"])
+  })
+
+  it("still fails when the process crashes and NO credentials were persisted", async () => {
+    const io = fakeIo({
+      files: embeddedFiles(), // no daemon.json on disk
+      existingPaths: ["/usr/bin/node"],
+      env: { PATH: "/usr/bin" },
+      runResults: [
+        { code: 3, stdout: "", stderr: "Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\\win\\async.c" },
+      ],
+    })
+    const result = await manager(io, { chorusUrl: "http://x", apiKey: "cho_k" }).login()
+
+    expect(result.code).toBe(3)
+    expect(io.writes.length).toBe(0)
+  })
+
   it("refuses to run without plugin credentials", async () => {
     const io = fakeIo({ files: embeddedFiles(), existingPaths: ["/usr/bin/node"], env: { PATH: "/usr/bin" } })
     await expect(manager(io).login()).rejects.toThrow(/credentials are not configured/)

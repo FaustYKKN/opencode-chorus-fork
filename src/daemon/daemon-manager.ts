@@ -116,6 +116,20 @@ export class DaemonManager {
     return path.join(this.io.homedir(), ".chorus", "daemon.json")
   }
 
+  /** The agent uuid persisted in ~/.chorus/daemon.json, or null if absent/unreadable. */
+  private async persistedAgentUuid(): Promise<string | null> {
+    try {
+      const parsed: unknown = JSON.parse(await this.io.readFile(this.daemonJsonPath()))
+      if (parsed && typeof parsed === "object") {
+        const uuid = (parsed as Record<string, unknown>).agentUuid
+        if (typeof uuid === "string" && uuid.trim()) return uuid
+      }
+    } catch {
+      // missing or corrupt file → treat as no persisted identity
+    }
+    return null
+  }
+
   private async readVersionInfo(dir: string): Promise<DaemonVersionInfo | undefined> {
     try {
       const parsed: unknown = JSON.parse(await this.io.readFile(path.join(dir, "VERSION.json")))
@@ -201,11 +215,24 @@ export class DaemonManager {
       "--api-key",
       this.apiKey,
     ])
-    if (result.code !== 0) {
+    // The `login` verb persists ~/.chorus/daemon.json BEFORE its process exits.
+    // On Windows some Node builds abort with a libuv `UV_HANDLE_CLOSING`
+    // assertion while tearing down the MCP/undici HTTP connection at exit —
+    // AFTER credentials are already written — so a run that actually succeeded
+    // reports a non-zero exit code (and its captured crash text would otherwise
+    // be surfaced as a scary "login failed"). Trust the on-disk result over the
+    // exit code: if THIS run printed its "credentials saved" marker AND the file
+    // now holds a valid agent identity, the login succeeded — continue.
+    const output = `${result.stdout}${result.stderr}`
+    const savedThisRun = /Credentials saved to/i.test(output)
+    const ok = result.code === 0 || (savedThisRun && (await this.persistedAgentUuid()) !== null)
+    if (!ok) {
       return { ...result, workdir: "" }
     }
     const resolvedWorkdir = await this.applyUnattendedDefaults(workdir)
-    return { ...result, workdir: resolvedWorkdir }
+    // Normalize the exit code so the setup caller reports ✓ (and does not dump
+    // the child's captured teardown-crash text) on the recovered path.
+    return { ...result, code: 0, workdir: resolvedWorkdir }
   }
 
   /** Default served directory: D:\opencode-auto-work when D: exists (Windows), else ~/opencode-auto-work. */
