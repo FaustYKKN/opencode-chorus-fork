@@ -25647,12 +25647,18 @@ function buildArgs({ sessionId, isNew, mcpConfigPath, permissionMode = "chorus" 
   }
   return args2;
 }
+function quoteWinArg(s) {
+  if (s === "") return '""';
+  if (!/[\s"]/.test(s)) return s;
+  return '"' + s.replace(/"/g, '""') + '"';
+}
 function resolveSpawnCommand(claudePath, args2, platform = process.platform, env = process.env) {
   const isWin = platform === "win32";
   const lower = claudePath.toLowerCase();
   if (isWin && (lower.endsWith(".cmd") || lower.endsWith(".bat"))) {
     const comspec = env.ComSpec || env.COMSPEC || "cmd.exe";
-    return { command: comspec, argv: ["/d", "/s", "/c", claudePath, ...args2] };
+    const line = [claudePath, ...args2].map(quoteWinArg).join(" ");
+    return { command: comspec, argv: ["/d", "/s", "/c", `"${line}"`], windowsVerbatimArguments: true };
   }
   return { command: claudePath, argv: args2 };
 }
@@ -25727,7 +25733,7 @@ var init_claude_spawner = __esm({
           return { sessionId: id, exitCode: null, isNew };
         }
         const args2 = buildArgs({ sessionId: id, isNew, mcpConfigPath, permissionMode: this.permissionMode });
-        const { command, argv } = resolveSpawnCommand(claudePath, args2);
+        const { command, argv, windowsVerbatimArguments } = resolveSpawnCommand(claudePath, args2);
         const detached = (this.platform ?? process.platform) !== "win32";
         return new Promise((resolve2) => {
           let child;
@@ -25748,7 +25754,10 @@ var init_claude_spawner = __esm({
               // injection; .cmd is handled explicitly via cmd.exe above.
               shell: false,
               detached,
-              windowsHide: true
+              windowsHide: true,
+              // Set only for the Windows .cmd/.bat route (undefined elsewhere): the
+              // command line was hand-quoted above, so Node must not re-quote it.
+              windowsVerbatimArguments
             });
           } catch (err) {
             this.logger.error(`[Chorus] failed to spawn claude: ${err}`);
@@ -26557,12 +26566,18 @@ function resolveCodexPath(deps = {}) {
   }
   return null;
 }
+function quoteWinArg2(s) {
+  if (s === "") return '""';
+  if (!/[\s"]/.test(s)) return s;
+  return '"' + s.replace(/"/g, '""') + '"';
+}
 function resolveSpawnCommand2(codexPath, args2, platform = process.platform, env = process.env) {
   const isWin = platform === "win32";
   const lower = codexPath.toLowerCase();
   if (isWin && (lower.endsWith(".cmd") || lower.endsWith(".bat"))) {
     const comspec = env.ComSpec || env.COMSPEC || "cmd.exe";
-    return { command: comspec, argv: ["/d", "/s", "/c", codexPath, ...args2] };
+    const line = [codexPath, ...args2].map(quoteWinArg2).join(" ");
+    return { command: comspec, argv: ["/d", "/s", "/c", `"${line}"`], windowsVerbatimArguments: true };
   }
   return { command: codexPath, argv: args2 };
 }
@@ -26611,7 +26626,7 @@ var init_codex_spawner = __esm({
           return { sessionId: anchor, exitCode: null, isNew };
         }
         const args2 = buildCodexArgs({ isNew, threadId: knownThreadId, permissionMode: this.permissionMode });
-        const { command, argv } = resolveSpawnCommand2(codexPath, args2, this.platform);
+        const { command, argv, windowsVerbatimArguments } = resolveSpawnCommand2(codexPath, args2, this.platform);
         const detached = this.platform !== "win32";
         const childEnv = { ...process.env, CHORUS_DAEMON_HEADLESS: "1" };
         if (this.creds && this.creds.apiKey) childEnv.CHORUS_API_KEY = this.creds.apiKey;
@@ -26624,7 +26639,9 @@ var init_codex_spawner = __esm({
               env: childEnv,
               shell: false,
               detached,
-              windowsHide: true
+              windowsHide: true,
+              // Only truthy on the Windows .cmd/.bat route (hand-quoted above).
+              windowsVerbatimArguments
             });
           } catch (err) {
             this.logger.error(`[Chorus] failed to spawn codex: ${err}`);
@@ -26825,7 +26842,7 @@ var init_opencode_spawner = __esm({
           permissionMode: this.permissionMode,
           model: process.env.CHORUS_OPENCODE_MODEL || null
         });
-        const { command, argv } = resolveSpawnCommand2(opencodePath, args2, this.platform);
+        const { command, argv, windowsVerbatimArguments } = resolveSpawnCommand2(opencodePath, args2, this.platform);
         const detached = this.platform !== "win32";
         const resolvedCwd = cwd ?? process.cwd();
         const childEnv = { ...process.env, CHORUS_DAEMON_HEADLESS: "1", PWD: resolvedCwd };
@@ -26845,7 +26862,9 @@ var init_opencode_spawner = __esm({
               env: childEnv,
               shell: false,
               detached,
-              windowsHide: true
+              windowsHide: true,
+              // Only truthy on the Windows .cmd/.bat route (hand-quoted above).
+              windowsVerbatimArguments
             });
           } catch (err) {
             this.logger.error(`[Chorus] failed to spawn opencode: ${err}`);
