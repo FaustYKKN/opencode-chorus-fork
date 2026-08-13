@@ -1,6 +1,6 @@
 {
   "name": "opencode-chorus",
-  "version": "0.10.8",
+  "version": "0.10.9",
   "description": "OpenCode plugin for Chorus MCP workflow, planning, and reviewer automation.",
   "license": "AGPL-3.0-only",
   "type": "module",
@@ -28,7 +28,8 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "pack:check": "npm pack --dry-run",
-    "prepack": "bun run clean && bun run build",
+    "bundle": "node ./scripts/bundle-plugin.mjs",
+    "prepack": "bun run clean && bun run build && bun run bundle",
     "prepublishOnly": "bun run typecheck && bun run test && bun run pack:check",
     "sync:daemon": "node ./scripts/sync-daemon.mjs"
   },
@@ -57,13 +58,12 @@
     "bun": ">=1.1.0 <2"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@opencode-ai/plugin": "^1.14.28",
     "@types/bun": "latest",
     "typescript": "^6.0.3"
   },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "@opencode-ai/plugin": "^1.14.28"
-  },
+  "dependencies": {},
   "bin": {
     "opencode-chorus": "./bin/cli.mjs"
   }

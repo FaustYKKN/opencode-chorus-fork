@@ -51,12 +51,17 @@ describe("package manifest", () => {
         test: "bun test",
         "pack:check": "npm pack --dry-run",
         "sync:daemon": "node ./scripts/sync-daemon.mjs",
-        prepack: "bun run clean && bun run build",
+        bundle: "node ./scripts/bundle-plugin.mjs",
+        prepack: "bun run clean && bun run build && bun run bundle",
         prepublishOnly: "bun run typecheck && bun run test && bun run pack:check"
       },
       devDependencies: {
         typescript: "^6.0.3"
-      }
+      },
+      // Zero runtime deps: the opencode entry (dist/index.js) is esbuild-bundled
+      // self-contained so `npx <tgz> setup` and opencode's plugin install fetch
+      // nothing from npm (the intranet mirror 404s on the SDK/plugin dep tree).
+      dependencies: {}
     })
 
     expect(packageJson.module).toBeUndefined()
