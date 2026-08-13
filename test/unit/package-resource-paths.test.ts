@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import { stat } from "node:fs/promises"
 import { basename, join } from "node:path"
-import { bundledSkillsDir, getBundledPromptUrl, readBundledPrompt } from "../../src/util/package-resource-paths"
+import { bundledSkillsDir, getBundledPromptPath, readBundledPrompt } from "../../src/util/package-resource-paths"
 
 describe("package resource paths", () => {
   it("resolves bundled skills and prompts from the package root", async () => {
@@ -10,8 +10,8 @@ describe("package resource paths", () => {
     expect((await stat(join(bundledSkillsDir, "chorus-openspec", "SKILL.md"))).isFile()).toBe(true)
 
     for (const promptName of ["proposal-reviewer.md", "task-reviewer.md"]) {
-      const promptUrl = getBundledPromptUrl(promptName)
-      expect(basename(promptUrl.pathname)).toBe(promptName)
+      const promptPath = getBundledPromptPath(promptName)
+      expect(basename(promptPath)).toBe(promptName)
       expect(await readBundledPrompt(promptName)).toContain("VERDICT:")
     }
   })
