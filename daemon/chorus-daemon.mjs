@@ -25844,24 +25844,6 @@ async function killProcessTree(child, opts = {}) {
     return { signaled: false, killed: false, escalated: false };
   }
   const pid = child.pid;
-  let signaled;
-  if (isWin) {
-    try {
-      signaled = child.kill?.("SIGINT") ?? false;
-    } catch (err) {
-      logger.warn(`[Chorus] child.kill("SIGINT") failed: ${err}`);
-      signaled = false;
-    }
-    logger.info(`[Chorus] interrupt: sent SIGINT to pid ${pid} (windows, direct child)`);
-  } else {
-    signaled = signalGroup(pid, "SIGINT", killImpl, logger);
-    logger.info(`[Chorus] interrupt: sent SIGINT to process group -${pid} (posix)`);
-  }
-  const exitedGracefully = await waitForChildExit(child, sigintTimeoutMs, opts, logger);
-  if (exitedGracefully) {
-    logger.info(`[Chorus] interrupt: pid ${pid} exited gracefully within ${sigintTimeoutMs}ms`);
-    return { signaled, killed: true, escalated: false };
-  }
   if (isWin) {
     try {
       const tk = spawnImpl("taskkill", ["/PID", String(pid), "/T", "/F"], {
@@ -25869,14 +25851,22 @@ async function killProcessTree(child, opts = {}) {
         windowsHide: true
       });
       tk?.on?.("error", (err) => logger.warn(`[Chorus] taskkill spawn error: ${err}`));
-      logger.info(`[Chorus] interrupt: escalated \u2014 taskkill /PID ${pid} /T /F (windows)`);
+      logger.info(`[Chorus] interrupt: taskkill /PID ${pid} /T /F (windows, whole tree)`);
+      return { signaled: true, killed: true, escalated: true };
     } catch (err) {
-      logger.warn(`[Chorus] taskkill escalation failed for pid ${pid}: ${err}`);
+      logger.warn(`[Chorus] taskkill failed for pid ${pid}: ${err}`);
+      return { signaled: false, killed: false, escalated: false };
     }
-  } else {
-    signalGroup(pid, "SIGKILL", killImpl, logger);
-    logger.info(`[Chorus] interrupt: escalated \u2014 SIGKILL to process group -${pid} (posix)`);
   }
+  const signaled = signalGroup(pid, "SIGINT", killImpl, logger);
+  logger.info(`[Chorus] interrupt: sent SIGINT to process group -${pid} (posix)`);
+  const exitedGracefully = await waitForChildExit(child, sigintTimeoutMs, opts, logger);
+  if (exitedGracefully) {
+    logger.info(`[Chorus] interrupt: pid ${pid} exited gracefully within ${sigintTimeoutMs}ms`);
+    return { signaled, killed: true, escalated: false };
+  }
+  signalGroup(pid, "SIGKILL", killImpl, logger);
+  logger.info(`[Chorus] interrupt: escalated \u2014 SIGKILL to process group -${pid} (posix)`);
   return { signaled, killed: true, escalated: true };
 }
 async function waitForChildExit(child, ms, opts, logger) {
